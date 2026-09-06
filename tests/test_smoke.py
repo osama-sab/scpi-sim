@@ -1,6 +1,7 @@
-import scpi_driver
+import importlib.metadata
+
 import scpi_sim
 
-def test_check():
-    assert scpi_sim, "scpi_sim not imported"
-    assert scpi_driver, "scpi_driver not imported"
+
+def test_version() -> None:
+    assert importlib.metadata.version("scpi-sim") == scpi_sim.__version__

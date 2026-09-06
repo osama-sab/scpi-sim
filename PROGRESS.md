@@ -23,12 +23,12 @@ are not going well.
 Full detail in `docs/BUILD_PLAN.md`. Tick only when committed and pushed.
 
 ### Phase 0 — Foundations (3–4 h)
-- [ ] `git init`, GitHub repo, `.gitignore`
-- [ ] Directory layout: `src/scpi_sim/`, `src/scpi_driver/`, `tests/`, `docs/`
-- [ ] `pyproject.toml` with dependencies
-- [ ] pytest installed, one trivial test passing
-- [ ] ruff configured and clean
-- [ ] mypy configured
+- [x] `git init`, GitHub repo, `.gitignore`
+- [x] Directory layout: `src/scpi_sim/`, `src/scpi_driver/`, `tests/`, `docs/`
+- [x] `pyproject.toml` with dependencies
+- [x] pytest installed, one trivial test passing
+- [x] ruff configured and clean
+- [x] mypy configured
 - [ ] Pre-commit hook running ruff
 
 ### Phase 1 — SCPI parser and simulated instrument (10–14 h)
