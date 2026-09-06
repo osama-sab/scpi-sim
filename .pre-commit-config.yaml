@@ -1,0 +1,24 @@
+# Runs automatically on `git commit`, on the staged files only.
+# Install once with:  uv run pre-commit install
+# Run against everything with:  uv run pre-commit run --all-files
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=500]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.0
+    hooks:
+      # Lint. --fix means the hook repairs what it can; the commit still aborts
+      # so you can inspect the repair before staging it.
+      - id: ruff-check
+        args: [--fix]
+      # Format.
+      - id: ruff-format
