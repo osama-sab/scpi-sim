@@ -29,7 +29,7 @@ Full detail in `docs/BUILD_PLAN.md`. Tick only when committed and pushed.
 - [x] pytest installed, one trivial test passing
 - [x] ruff configured and clean
 - [x] mypy configured
-- [ ] Pre-commit hook running ruff
+- [x] Pre-commit hook running ruff
 
 ### Phase 1 — SCPI parser and simulated instrument (10–14 h)
 - [ ] Command tree: short/long form, case-insensitive
