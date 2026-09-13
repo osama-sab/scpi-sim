@@ -8,13 +8,18 @@ are not going well.
 
 ## Current position
 
-**Phase:** 0 — Foundations
-**Started:** <!-- YYYY-MM-DD -->
-**Last session:** <!-- YYYY-MM-DD -->
-**Hours invested so far:** 0
+**Phase:** 1 - SCPI parser and simulated instrument
+**Started:**  2026-09-03
+**Last session:** 2026-09-13
+**Hours invested so far:** 10
 
 **Next concrete task:**
-> Initialise the repository and get one trivial test passing in CI.
+> Mnemonic validation: when a `Node` is built, check that its mnemonic is
+> well-formed — the uppercase prefix is a real prefix of the word, the
+> remainder is lowercase, and the whole thing is ≤ 12 characters. Decide first,
+> in writing, where the check lives (`__init__`, or a separate `validate()` a
+> tree-builder calls later) and what happens on failure (raise, and with what
+> exception). Nothing else yet — no children, no tree, no resolver.
 
 ---
 
@@ -32,19 +37,59 @@ Full detail in `docs/BUILD_PLAN.md`. Tick only when committed and pushed.
 - [x] Pre-commit hook running ruff
 
 ### Phase 1 — SCPI parser and simulated instrument (10–14 h)
-- [ ] Command tree: short/long form, case-insensitive
+
+Expanded 2026-09-09 after auditing `docs/BUILD_PLAN.md` against the actual
+message syntax. Items marked ⁺ were not in the build plan at all; the plan was
+written before I understood the protocol, so it named things at the wrong
+granularity. Left the build plan alone — the gap between the two documents is an
+honest record of what I learned.
+
+**Command tree (1.1)**
+- [x] Command tree: short/long form, case-insensitive
+- [x] ⁺ Exactly two spellings per node — `VOLTAG` rejected. Not prefix matching
+- [ ] ⁺ Mnemonic validated when the tree is built (uppercase prefix is a real
+      prefix, remainder lowercase, ≤ 12 chars)
 - [ ] Optional bracketed keywords resolve
+- [ ] ⁺ Nested optional keywords resolve
+- [ ] ⁺ Ambiguity detected at tree-build time, error naming both competing paths
 - [ ] Leading colon, semicolon chaining
+- [ ] ⁺ Current path carried across chained units, reset at the terminator
+- [ ] ⁺ Current path is per-connection state, not module-level
+- [ ] ⁺ Common commands (`*XYZ`) leave the current path untouched
 - [ ] Query vs command distinction
+- [ ] ⁺ Settable and queryable are independent flags — bare `SENS` is an error
+
+**Message syntax (1.1b) — ⁺ absent from the build plan entirely**
+- [ ] ⁺ Whitespace separates header from parameters; commas between parameters
+- [ ] ⁺ Queries may carry parameters (`MEAS:VOLT:DC? 10,0.001`)
+- [ ] ⁺ Response message is one line; multiple queries joined by `;`
+- [ ] ⁺ Empty message unit (`;;`) rejected
+- [ ] ⁺ Keyword numeric suffix (`CHANnel2`); absent suffix means 1
+
+**Parameters (1.2)**
 - [ ] Numeric parameters with suffixes
 - [ ] MIN / MAX / DEF
 - [ ] Boolean and discrete parameters
 - [ ] Range checking pushes errors
+
+**Common commands (1.3)**
 - [ ] `*IDN?`, `*RST`, `*CLS`, `*TST?`
+
+**Error queue (1.4)**
 - [ ] Error queue with standard negative codes
+- [ ] ⁺ Parser-generated codes: -101, -102, -103, -108, -110, -112, -114
+      (the plan listed only -100, -113, -222, -224, -410, -350)
+- [ ] ⁺ **Decide and document:** which code fires for a bare non-executable
+      node — -113 or -100?
+- [ ] ⁺ **Decide and document:** on a failed unit mid-message, are the remaining
+      units discarded, and is the current path modified? (Look it up in
+      IEEE 488.2, don't guess)
+
+**Measurement and transport (1.5, 1.6)**
 - [ ] Noisy measurement values, NPLC affects noise
 - [ ] Acquisition timing modelled
 - [ ] TCP server on port 5025, partial reads handled
+
 - [ ] **Milestone:** `telnet localhost 5025` → `*IDN?` answers
 
 ### Phase 2 — Driver (8–10 h)

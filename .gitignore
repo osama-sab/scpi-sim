@@ -33,3 +33,8 @@ data/*.png
 # ---- Claude Code ----
 # Machine-local permission settings. The shared CLAUDE.md/AGENTS.md are committed.
 .claude/settings.local.json
+
+# ---- Revision notes (LaTeX) ----
+# Personal study material, not part of the deliverable. The committed protocol
+# write-up is docs/scpi-notes.md, written by hand in Phase 7.
+tex/
