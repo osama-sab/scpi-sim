@@ -10,16 +10,15 @@ are not going well.
 
 **Phase:** 1 - SCPI parser and simulated instrument
 **Started:**  2026-09-03
-**Last session:** 2026-09-13
-**Hours invested so far:** 10
+**Last session:** 2026-09-14
+**Hours invested so far:** 12
 
 **Next concrete task:**
-> Mnemonic validation: when a `Node` is built, check that its mnemonic is
-> well-formed — the uppercase prefix is a real prefix of the word, the
-> remainder is lowercase, and the whole thing is ≤ 12 characters. Decide first,
-> in writing, where the check lives (`__init__`, or a separate `validate()` a
-> tree-builder calls later) and what happens on failure (raise, and with what
-> exception). Nothing else yet — no children, no tree, no resolver.
+> Optional bracketed keywords resolve. Decide how a `Node` marks itself as
+> optional (already has an `optional: bool` field) and how tree traversal
+> should skip an optional node when the input omits it. Nothing about nested
+> optionals or ambiguity detection yet — just a single optional keyword
+> resolving correctly.
 
 ---
 
@@ -47,7 +46,7 @@ honest record of what I learned.
 **Command tree (1.1)**
 - [x] Command tree: short/long form, case-insensitive
 - [x] ⁺ Exactly two spellings per node — `VOLTAG` rejected. Not prefix matching
-- [ ] ⁺ Mnemonic validated when the tree is built (uppercase prefix is a real
+- [x] ⁺ Mnemonic validated when the tree is built (uppercase prefix is a real
       prefix, remainder lowercase, ≤ 12 chars)
 - [ ] Optional bracketed keywords resolve
 - [ ] ⁺ Nested optional keywords resolve
@@ -148,6 +147,34 @@ honest record of what I learned.
 Newest first. One entry per session: what I did, what I got stuck on, what I
 learned. Keep it short but write the stuck parts down — they are the useful
 record.
+
+### 2026-09-14 — ? h
+Did: Decided mnemonic validation lives in `__post_init__` and raises a
+custom `InvalidMnemonicError(ValueError)`, so a future tree-builder can
+catch this specific failure without swallowing unrelated `ValueError`s.
+Implemented the three checks (prefix is a real uppercase prefix, remainder
+is lowercase, length ≤ 12). Along the way, fixed an infinite-recursion bug
+between `short()`/`long()` for mnemonics ≤ 4 characters, and simplified
+`long()` to just `self.mnemonic.upper()` instead of reconstructing it from
+`short()`.
+Stuck on: My first attempt at the prefix/remainder checks scanned the whole
+string collecting uppercase and lowercase characters into two buckets —
+this checks a subsequence, not a real prefix, and doesn't test position at
+all. Rewrote it to slice at `n = len(self.short())` instead, which is
+position-based and reuses `short()`'s own boundary logic as the single
+source of truth. That surfaced a bigger issue: `short()`/`long()` were
+built assuming the caller passes a plain word and lets the vowel-length
+heuristic find the abbreviation boundary, but validation assumes the
+caller already writes the boundary into the mnemonic's casing (e.g.
+`"VOLTage"`). Those are two different conventions — had to pick one
+(casing is authoritative) and rewrite `test_short`/`test_long`'s fixtures
+to match.
+Learned: `str.isupper()`/`.islower()` both return `False` on an empty
+string, which matters for ≤ 4-character mnemonics where the "remainder"
+slice is `""`. Mutual recursion between two methods that each call the
+other, with no state that ever changes between calls, doesn't loop forever
+silently — it raises `RecursionError` once the stack depth limit is hit.
+Next: Optional bracketed keywords resolve.
 
 <!--
 ### YYYY-MM-DD — 2.5 h

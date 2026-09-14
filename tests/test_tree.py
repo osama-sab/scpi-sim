@@ -2,7 +2,7 @@ from scpi_sim.tree import Node
 
 
 def test_short() -> None:
-    list_long = ["voltage", "current", "measure", "DO", "TaxI", "AUTO", "POwER"]
+    list_long = ["VOLTage", "CURRent", "MEASure", "DO", "TAXI", "AUTO", "POWer"]
 
     expected_shorts = ["VOLT", "CURR", "MEAS", "DO", "TAXI", "AUTO", "POW"]
 
@@ -15,7 +15,7 @@ def test_short() -> None:
 
 
 def test_long() -> None:
-    list_long = ["voltage", "current", "measure", "DO", "TaxI", "AUTO", "POwER"]
+    list_long = ["VOLTage", "CURRent", "MEASure", "DO", "TAXI", "AUTO", "POWer"]
 
     expected_long = ["VOLTAGE", "CURRENT", "MEASURE", "DO", "TAXI", "AUTO", "POWER"]
 

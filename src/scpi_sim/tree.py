@@ -3,6 +3,10 @@
 from dataclasses import dataclass
 
 
+class InvalidMnemonicError(ValueError):
+    """Raised when a Node's mnemonic doesn't follow SCPI naming rules."""
+
+
 @dataclass(frozen=True)
 class Node:
     """One keyword in the SCPI command tree."""
@@ -12,11 +16,35 @@ class Node:
     queryable: bool = False
     optional: bool = False
 
+    def __post_init__(self) -> None:
+        """Validate the mnemonic against the SCPI naming convention.
+
+        Raises
+        ------
+        InvalidMnemonicError
+            If the abbreviation prefix isn't uppercase, the remainder
+            isn't lowercase, or the mnemonic is longer than 12 characters.
+        """
+        n = len(self.short())
+
+        if self.mnemonic[:n] != self.short():
+            raise InvalidMnemonicError("Mnemonic's prefix should be capitalized")
+
+        if self.mnemonic[n:] != self.long():
+            for char in self.mnemonic[n:]:
+                if char.isupper():
+                    raise InvalidMnemonicError(
+                        "Mnemonic's remainder should be lowercase"
+                    )
+
+        if len(self.mnemonic) > 12:
+            raise InvalidMnemonicError("Max. 12 Characters for a mnemonic")
+
     def short(self) -> str:
         """Return the standard SCPI short form of the mnemonic."""
         clean_name = self.mnemonic.lower()
         if len(clean_name) <= 4:
-            return Node.long(self)
+            return clean_name.upper()
         elif clean_name[3] in ["a", "e", "i", "o", "u"]:
             short3 = clean_name[:3]
             return short3.upper()
@@ -26,8 +54,7 @@ class Node:
 
     def long(self) -> str:
         """Return the mnemonic's long form, upper-cased."""
-        clean_name = self.mnemonic.lower()
-        return clean_name.upper()
+        return self.mnemonic.upper()
 
     def matches(self, text: list[str]) -> list[bool]:
         """Return whether each keyword in `text` matches this mnemonic.
