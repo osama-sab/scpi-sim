@@ -1,6 +1,6 @@
 """A single node of the SCPI command tree, with its short and long spellings."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 class InvalidMnemonicError(ValueError):
@@ -15,6 +15,7 @@ class Node:
     settable: bool = False
     queryable: bool = False
     optional: bool = False
+    children: dict[str, "Node"] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Validate the mnemonic against the SCPI naming convention.
@@ -64,3 +65,21 @@ class Node:
         """
         match_list = [self.short(), self.long()]
         return [t.upper() in match_list for t in text]
+
+    def resolve(self, keyword: str) -> "Node | None":
+        """Return the child matching `keyword`, or `None` if nothing matches."""
+        node_key = Node("")
+        values_children = self.children.values()
+        for node in values_children:
+            if keyword.upper() == node.long():
+                node_key = node
+            if keyword.upper() == node.short():
+                node_key = node
+        if node_key in values_children:
+            return node_key
+        for word in values_children:
+            if word.optional:
+                if word.resolve(keyword):
+                    node_key_2 = word.resolve(keyword)
+                    return node_key_2
+        return None

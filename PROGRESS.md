@@ -10,15 +10,15 @@ are not going well.
 
 **Phase:** 1 - SCPI parser and simulated instrument
 **Started:**  2026-09-03
-**Last session:** 2026-09-14
-**Hours invested so far:** 12
+**Last session:** 2026-09-16
+**Hours invested so far:** 15
 
 **Next concrete task:**
-> Optional bracketed keywords resolve. Decide how a `Node` marks itself as
-> optional (already has an `optional: bool` field) and how tree traversal
-> should skip an optional node when the input omits it. Nothing about nested
-> optionals or ambiguity detection yet — just a single optional keyword
-> resolving correctly.
+> Leading colon, semicolon chaining. Walk a full chained command
+> (`SENS:VOLT:DC:NPLC 10`) by splitting on `:` and calling `resolve()` once
+> per keyword, advancing to whatever node it returns each time. Decide how a
+> leading `:` resets to root, and how `;` separates chained units. Nothing
+> about nested optionals or ambiguity detection yet.
 
 ---
 
@@ -48,7 +48,7 @@ honest record of what I learned.
 - [x] ⁺ Exactly two spellings per node — `VOLTAG` rejected. Not prefix matching
 - [x] ⁺ Mnemonic validated when the tree is built (uppercase prefix is a real
       prefix, remainder lowercase, ≤ 12 chars)
-- [ ] Optional bracketed keywords resolve
+- [x] Optional bracketed keywords resolve
 - [ ] ⁺ Nested optional keywords resolve
 - [ ] ⁺ Ambiguity detected at tree-build time, error naming both competing paths
 - [ ] Leading colon, semicolon chaining
@@ -175,6 +175,39 @@ slice is `""`. Mutual recursion between two methods that each call the
 other, with no state that ever changes between calls, doesn't loop forever
 silently — it raises `RecursionError` once the stack depth limit is hit.
 Next: Optional bracketed keywords resolve.
+
+### 2026-09-16 — ? h
+Did: Added `children` to `Node` and implemented `resolve(keyword)` — checks
+this node's direct children first, then falls back to recursing into
+children where `optional` is `True` (never required ones), so a keyword
+behind an optional node resolves without being typed. Went through two
+representations: `children: list["Node"]` first, then switched to
+`children: dict[str, "Node"]` keyed by both `short()` and `long()` of each
+child, once the list version's O(n) scan-and-compare felt like it was
+fighting the data structure. Wrote `test_resolve`, covering a direct
+short-form match, a direct long-form match, a miss, a match reached only
+through an optional child, a required child correctly blocking the same
+kind of skip, and the returned object being the real node (not a lookalike).
+Stuck on: `resolve()` went through many broken versions before the shape was
+right, and almost every bug was a variant of the same mistake — computing or
+finding the right thing, then returning something *else* that happened to
+also be a `Node`: the stale last-iterated loop variable, an empty sentinel
+placeholder, a brand-new `Node(keyword)` reconstructed from raw input text
+(which also silently re-ran mnemonic validation on protocol input and
+crashed on real long-form keywords), the immediate intermediate child
+instead of what its own recursive call found. Also hit `UnboundLocalError`
+twice from a variable only assigned inside a loop's `if`, then read
+unconditionally after the loop — same class of bug as an unfilled variable,
+just a different shape than the mnemonic-validation typos from last time.
+Learned: a frozen dataclass can't be used as a dict key once any of its
+fields is a `list` or `dict` — `TypeError: unhashable type` — so `Node`
+itself can never be a key, only ever a value. `mypy --strict` catches type
+mismatches (like passing a `list` where a `dict` is expected) but not a
+possibly-unbound local variable, and not a runtime crash from a
+validly-typed-but-semantically-wrong value (like `Node(keyword)` blowing up
+inside its own `__post_init__`) — those only ever showed up by actually
+running the code.
+Next: Leading colon, semicolon chaining.
 
 <!--
 ### YYYY-MM-DD — 2.5 h

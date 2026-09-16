@@ -37,3 +37,50 @@ def test_matches() -> None:
     match_long = node.matches(list_long)
 
     assert match_long == expected_bool_list
+
+
+def test_resolve() -> None:
+    dc = Node("DC")
+    volt_sense = Node("VOLTage", children={dc.short(): dc, dc.long(): dc})
+    sense = Node(
+        "SENSe",
+        optional=True,
+        children={volt_sense.short(): volt_sense, volt_sense.long(): volt_sense},
+    )
+
+    nplc = Node("NPLCycles")
+    ac = Node("AC", children={nplc.short(): nplc, nplc.long(): nplc})
+    volt = Node("VOLTage", children={ac.short(): ac, ac.long(): ac})
+    meas = Node("MEASure", children={volt.short(): volt, volt.long(): volt})
+
+    root = Node(
+        "ROOT",
+        children={
+            sense.short(): sense,
+            sense.long(): sense,
+            meas.short(): meas,
+            meas.long(): meas,
+        },
+    )
+
+    key_word_short = "NPLC"
+
+    key_word_long = "VOLTAGE"
+
+    key_word_miss = "NPLCycles"
+
+    keyword_match = "VOLTage"
+
+    keyword_block = "AC"
+
+    list_test = [
+        ac.resolve(key_word_short),
+        meas.resolve(key_word_long),
+        meas.resolve(key_word_miss),
+        root.resolve(keyword_match),
+        root.resolve(keyword_block),
+    ]
+
+    expected_list = [nplc, volt, None, volt_sense, None]
+
+    assert list_test == expected_list
