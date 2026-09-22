@@ -10,15 +10,18 @@ are not going well.
 
 **Phase:** 1 - SCPI parser and simulated instrument
 **Started:**  2026-09-03
-**Last session:** 2026-09-16
-**Hours invested so far:** 15
+**Last session:** 2026-09-22
+**Hours invested so far:** ?
 
 **Next concrete task:**
 > Leading colon, semicolon chaining. Walk a full chained command
 > (`SENS:VOLT:DC:NPLC 10`) by splitting on `:` and calling `resolve()` once
 > per keyword, advancing to whatever node it returns each time. Decide how a
 > leading `:` resets to root, and how `;` separates chained units. Nothing
-> about nested optionals or ambiguity detection yet.
+> about nested optionals or ambiguity detection yet. `Node` now has both
+> `children` and `parent`, and `current_path` will store the resolved
+> `Node` itself (not the literal route) — the walker itself hasn't been
+> started yet.
 
 ---
 
@@ -208,6 +211,44 @@ validly-typed-but-semantically-wrong value (like `Node(keyword)` blowing up
 inside its own `__post_init__`) — those only ever showed up by actually
 running the code.
 Next: Leading colon, semicolon chaining.
+
+### 2026-09-22 — ? h
+Did: Resolved the "position vs route" question left open in `ch05` of my
+revision notes — `current_path` will store the resolved `Node` itself, not
+the literal header text, since `resolve()` already returns `Node`s and two
+different spellings reaching the same command should leave identical state.
+That meant `Node` needed to track its own `parent` (rule 5: after a unit
+resolves, the path becomes the parent of what it resolved to). Hit the
+circularity my own `ch03` notes predicted — a child must exist before its
+parent, so it can't know its parent at construction time — and resolved it
+by dropping `frozen=True` rather than fighting it with `object.__setattr__`.
+`parent` is `init=False` (only a parent's own wiring can set it) and
+excluded from `__eq__`/`repr` (`compare=False`, `repr=False`). Wired it in
+`__post_init__`, in two passes: the first only checks whether a child
+already belongs to a different parent and raises the new
+`DuplicateParentError(ValueError)`, the second only assigns — so a rejected
+construction can't leave earlier children in the same loop half-wired to a
+parent that never finished being built.
+Stuck on: my first version of the check combined looking and assigning in
+one loop, so a raise partway through could leave an *earlier*, perfectly
+valid child pointing at a parent that was ultimately rejected — confirmed by
+building exactly that case by hand before splitting the loop. Also wrote the
+comparison as `!=` before catching myself — dataclass equality compares
+data, not identity, so two structurally-equal-but-different parent objects
+would have passed silently; needs `is not`. Chained calls like
+`ac.resolve(keyword).parent` kept failing `mypy --strict` even after the
+logic was right, since `resolve()` returns `Node | None` and mypy can't
+narrow a call it hasn't seen assigned to a name — fixed by capturing the
+result first and asserting it isn't `None` before using it.
+Learned: giving a dataclass a back-reference field without `compare=False`
+makes `==` between two structurally identical trees raise `RecursionError`
+— the generated `__eq__` walks into `parent`, which walks back into
+`children`, which contains the node you started from. Confirmed directly by
+triggering it. `field(init=False)` only removes a field from the generated
+`__init__`; on a non-frozen class it does nothing to stop a plain
+`node.parent = x` afterwards — the two are unrelated protections.
+Next: the colon/semicolon-chaining walker itself — `Node` now has what it
+needs, but nothing has been written for it yet.
 
 <!--
 ### YYYY-MM-DD — 2.5 h
