@@ -7,7 +7,11 @@ class InvalidMnemonicError(ValueError):
     """Raised when a Node's mnemonic doesn't follow SCPI naming rules."""
 
 
-@dataclass(frozen=True)
+class DuplicateParentError(ValueError):
+    """Raised when a child Node has more than one parent."""
+
+
+@dataclass
 class Node:
     """One keyword in the SCPI command tree."""
 
@@ -16,15 +20,21 @@ class Node:
     queryable: bool = False
     optional: bool = False
     children: dict[str, "Node"] = field(default_factory=dict)
+    parent: "Node | None" = field(default=None, init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
-        """Validate the mnemonic against the SCPI naming convention.
+        """Validate the mnemonic, then make this node the parent of its children.
+
+        Every child is checked before any is changed, so a failure leaves
+        all children exactly as they were.
 
         Raises
         ------
         InvalidMnemonicError
             If the abbreviation prefix isn't uppercase, the remainder
             isn't lowercase, or the mnemonic is longer than 12 characters.
+        DuplicateParentError
+            If any child already belongs to a different parent node.
         """
         n = len(self.short())
 
@@ -40,6 +50,13 @@ class Node:
 
         if len(self.mnemonic) > 12:
             raise InvalidMnemonicError("Max. 12 Characters for a mnemonic")
+
+        for node in self.children.values():
+            if node.parent is not None and node.parent is not self:
+                raise DuplicateParentError("No duplicate parents")
+
+        for node in self.children.values():
+            node.parent = self
 
     def short(self) -> str:
         """Return the standard SCPI short form of the mnemonic."""
