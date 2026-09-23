@@ -10,8 +10,8 @@ are not going well.
 
 **Phase:** 1 - SCPI parser and simulated instrument
 **Started:**  2026-09-03
-**Last session:** 2026-09-22
-**Hours invested so far:** 18
+**Last session:** 2026-09-23
+**Hours invested so far:** 19
 
 **Next concrete task:**
 > Leading colon, semicolon chaining. Walk a full chained command
