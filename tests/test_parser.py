@@ -33,21 +33,27 @@ root = Node(
     ("start", "header", "expected_landed", "expected_path"),
     [
         (root, ":MEAS:VOLT:AC:NPLC", nplc, ac),
+        (root, "VOLT", volt_sense, root),
         (root, ":SENS:VOLT:DC", dc, volt_sense),
         (root, "MEAS:VOLTAGE:AC", ac, volt),
         (root, "meas:volt:ac", ac, volt),
         (volt, "AC:NPLC", nplc, ac),
         (volt, ":MEAS:VOLT:AC:NPLC", nplc, ac),
         (root, "VOLT:DC", dc, volt_sense),
+        (ac, "NPLC", nplc, ac),
+        (root, ":SENS", sense, root),
     ],
     ids=[
         "full-header",
+        "optional-skip",
         "full-header-through-optional",
         "short-and-long-mixed",
         "case-insensitive",
         "relative-from-current",
         "leading-colon-ignores-current",
         "optional-keyword-skipped",
+        "single-relative",
+        "single-leading-colon",
     ],
 )
 def test_walk_lands_and_keeps_route(
@@ -72,6 +78,7 @@ def test_walk_lands_and_keeps_route(
         (root, "MEAS:VOLT:"),
         (root, ""),
         (root, ":"),
+        (root, "MEAS:XYZ"),
     ],
     ids=[
         "no-leading-colon-from-wrong-node",
@@ -82,6 +89,7 @@ def test_walk_lands_and_keeps_route(
         "empty-keyword-trailing-colon",
         "empty-header",
         "bare-colon",
+        "non-existing-node",
     ],
 )
 def test_walk_fails_with_none(start: Node, header: str) -> None:

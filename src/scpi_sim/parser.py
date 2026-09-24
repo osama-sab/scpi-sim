@@ -31,6 +31,7 @@ def walk(root: Node, current: Node, header: str) -> "tuple[Node, Node] | None":
     if result[0] == "":
         current = root
         result = result[1:]
+    path = current
     for node in result:
         resolve_current = current.resolve(node)
         if resolve_current is None:
