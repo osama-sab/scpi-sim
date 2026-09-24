@@ -1,5 +1,7 @@
 """Tests for walking colon-separated headers through the command tree."""
 
+import pytest
+
 from scpi_sim.parser import walk
 from scpi_sim.tree import Node
 
@@ -27,52 +29,61 @@ root = Node(
 )
 
 
-def test_full_header_lands_on_node() -> None:
-    """A complete header resolves keyword by keyword to the right node."""
-    assert walk(root, meas, ":MEAS:VOLT:AC:NPLC") is nplc
-    assert walk(root, root, ":SENS:VOLT:DC") is dc
+@pytest.mark.parametrize(
+    ("start", "header", "expected_landed", "expected_path"),
+    [
+        (root, ":MEAS:VOLT:AC:NPLC", nplc, ac),
+        (root, ":SENS:VOLT:DC", dc, volt_sense),
+        (root, "MEAS:VOLTAGE:AC", ac, volt),
+        (root, "meas:volt:ac", ac, volt),
+        (volt, "AC:NPLC", nplc, ac),
+        (volt, ":MEAS:VOLT:AC:NPLC", nplc, ac),
+        (root, "VOLT:DC", dc, volt_sense),
+    ],
+    ids=[
+        "full-header",
+        "full-header-through-optional",
+        "short-and-long-mixed",
+        "case-insensitive",
+        "relative-from-current",
+        "leading-colon-ignores-current",
+        "optional-keyword-skipped",
+    ],
+)
+def test_walk_lands_and_keeps_route(
+    start: Node, header: str, expected_landed: Node, expected_path: Node
+) -> None:
+    """A header lands on its node; the path is the node before its last keyword."""
+    outcome = walk(root, start, header)
+    assert outcome is not None
+    landed, path = outcome
+    assert landed is expected_landed
+    assert path is expected_path
 
 
-def test_short_and_long_spellings_mix() -> None:
-    """Short and long forms can be mixed within one header."""
-    assert walk(root, root, "MEAS:VOLTAGE:AC") is ac
-
-
-def test_keywords_are_case_insensitive() -> None:
-    """Lowercase keywords resolve the same as uppercase ones."""
-    assert walk(root, root, "meas:volt:ac") is ac
-
-
-def test_relative_header_starts_from_current() -> None:
-    """Without a leading colon, the walk starts from `current`, not `root`."""
-    assert walk(root, volt, "AC:NPLC") is nplc
-
-
-def test_leading_colon_resets_to_root() -> None:
-    """A leading colon ignores `current`; the same header without one fails."""
-    assert walk(root, volt, ":MEAS:VOLT:AC:NPLC") is nplc
-    assert walk(root, volt, "MEAS:VOLT:AC:NPLC") is None
-
-
-def test_optional_keyword_can_be_skipped() -> None:
-    """An optional keyword (SENSe) can be left out of the header."""
-    assert walk(root, root, "VOLT:DC") is dc
-
-
-def test_required_keyword_cannot_be_skipped() -> None:
-    """A required keyword (MEASure) can't be left out of the header."""
-    assert walk(root, root, "VOLT:AC") is None
-
-
-def test_missing_keyword_returns_none() -> None:
-    """A keyword that doesn't exist, first or later, gives None."""
-    assert walk(root, root, "MEASu:VOLT:AC") is None
-    assert walk(root, root, "MEAS:VOLT:ACurrent") is None
-
-
-def test_malformed_headers_return_none() -> None:
-    """Empty keywords, an empty header, and a bare colon all give None."""
-    assert walk(root, root, "MEAS::VOLT") is None
-    assert walk(root, root, "MEAS:VOLT:") is None
-    assert walk(root, root, "") is None
-    assert walk(root, root, ":") is None
+@pytest.mark.parametrize(
+    ("start", "header"),
+    [
+        (volt, "MEAS:VOLT:AC:NPLC"),
+        (root, "VOLT:AC"),
+        (root, "MEASu:VOLT:AC"),
+        (root, "MEAS:VOLT:ACurrent"),
+        (root, "MEAS::VOLT"),
+        (root, "MEAS:VOLT:"),
+        (root, ""),
+        (root, ":"),
+    ],
+    ids=[
+        "no-leading-colon-from-wrong-node",
+        "required-keyword-skipped",
+        "first-keyword-missing",
+        "later-keyword-missing",
+        "empty-keyword-double-colon",
+        "empty-keyword-trailing-colon",
+        "empty-header",
+        "bare-colon",
+    ],
+)
+def test_walk_fails_with_none(start: Node, header: str) -> None:
+    """A header that can't be resolved gives None, never a partial result."""
+    assert walk(root, start, header) is None

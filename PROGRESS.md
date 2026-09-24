@@ -10,18 +10,18 @@ are not going well.
 
 **Phase:** 1 - SCPI parser and simulated instrument
 **Started:**  2026-09-03
-**Last session:** 2026-09-23
-**Hours invested so far:** 19
+**Last session:** 2026-09-24
+**Hours invested so far:** 20
 
 **Next concrete task:**
-> Leading colon, semicolon chaining. Walk a full chained command
-> (`SENS:VOLT:DC:NPLC 10`) by splitting on `:` and calling `resolve()` once
-> per keyword, advancing to whatever node it returns each time. Decide how a
-> leading `:` resets to root, and how `;` separates chained units. Nothing
-> about nested optionals or ambiguity detection yet. `Node` now has both
-> `children` and `parent`, and `current_path` will store the resolved
-> `Node` itself (not the literal route) — the walker itself hasn't been
-> started yet.
+> The `;` loop. Split a message on `;` and run each unit through `walk()`,
+> which already returns `(landed, path)`. `current_path` starts at root for
+> every message and becomes each unit's `path` (the route, per SCPI-99
+> §6.2.4). What a failed unit does to the rest of the message is still open
+> (see Open questions) — pick a provisional behaviour, write it in the
+> docstring, and test it. Before that, two small items in `walk()`: give
+> `path` a value before the loop, and add the four missing test rows
+> (`VOLT` from root, `NPLC` from `ac`, `:SENS`, `MEAS:XYZ`).
 
 ---
 
@@ -250,6 +250,42 @@ triggering it. `field(init=False)` only removes a field from the generated
 Next: the colon/semicolon-chaining walker itself — `Node` now has what it
 needs, but nothing has been written for it yet.
 
+### 2026-09-24 — 2 h (across 23 and 24 September)
+Did: Wrote `walk(root, current, header)` in `parser.py`: split the header on
+`:`, treat an empty first element as a leading colon (start from root), then
+resolve one keyword per step. It now returns `(landed, path)` — where the
+header lands, and the path for the next unit. Moved its tests into
+`tests/test_parser.py` and rewrote them as two `pytest.mark.parametrize`
+tables (headers that resolve, headers that fail), 15 named rows.
+Decided: `current_path` follows the **route**, not the position. I had first
+chosen position (the path is the parent of the resolved node), thinking what
+real instruments do couldn't be known without hardware. Then I read SCPI-99
+§6.2.4: "Default nodes in the tree shall not alter the header path of the
+parser", with `DISP ON;DATA` given as an example that must fail. Why comply
+instead of documenting a deviation: the simulator exists so a driver tested
+against it behaves the same on a real instrument. Position disagreed with the
+standard in both directions — tried against my own tree, `VOLT;FUNC` raised an
+error no real instrument would, and `DISP ON;DATA` would be accepted where the
+standard says it must fail. "My parser follows SCPI-99 §6.2.4" is also a
+stronger interview answer than "I deviated". Implemented without storing
+text: `path` is the node the loop stood on just before its last step.
+Stuck on: the walker kept picking up `resolve()`'s shape — recursion, calling
+`walk` again with the whole header, then a `return` indented inside the loop
+so it stopped after one keyword. For the path I tried `current.parent`
+(position again), `result[-2]` (a keyword string, not a node, and an
+`IndexError` on one-keyword headers), and re-walking a shortened header
+string (wrong start for relative headers, and collides with my own
+""→None rule). Also changed the parser once to accept the root's name as a
+keyword so a wrong test would pass — the test was wrong, not the code.
+Learned: check the standard before calling a question open — Chapter 5 of my
+notes had said to look it up. A function that needs to hand back two things
+returns a tuple. `pytest.mark.parametrize` turns nine near-identical tests
+into two tables where a new case is one line. The Keysight Truevolt guide
+backs up the route (`TRIG:SOUR EXT;COUNT 10` equals `TRIG:COUNT 10`), keeps a
+20-entry FIFO error queue per interface, and — like SCPI-99 — doesn't say
+whether units after a failed one still run.
+Next: the `;` loop.
+
 <!--
 ### YYYY-MM-DD — 2.5 h
 Did:
@@ -283,4 +319,7 @@ is the actual interview preparation.
 
 Things I do not understand yet and should ask about or look up.
 
--
+- After a unit fails with `-113`, do the later units in the same message still
+  run? SCPI-99 §6.2.4 only says *earlier* units may take effect, and defers
+  compound headers to IEEE 488.2 §7.6.1.5 (paid). Check the Keysight 34461A
+  programming manual's error-handling section next.

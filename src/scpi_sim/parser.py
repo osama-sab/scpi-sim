@@ -3,11 +3,17 @@
 from scpi_sim.tree import Node
 
 
-def walk(root: Node, current: Node, header: str) -> "Node | None":
-    """Return the node that `header` resolves to, or `None` if any keyword misses.
+def walk(root: Node, current: Node, header: str) -> "tuple[Node, Node] | None":
+    """Resolve `header` and return ``(landed, path)``, or `None` if a keyword misses.
 
     A header with a leading colon starts from `root`; otherwise it starts from
     `current`. Each keyword is resolved one level below the previous one.
+
+    ``landed`` is the node the header resolves to. ``path`` is the node the walk
+    stood on just before the last keyword: the header minus its last keyword,
+    which is where the next relative unit in the same message starts. SCPI-99
+    section 6.2.4 requires this "route" rather than the parent of ``landed``,
+    because default (optional) nodes must not alter the header path.
 
     Parameters
     ----------
@@ -29,5 +35,6 @@ def walk(root: Node, current: Node, header: str) -> "Node | None":
         resolve_current = current.resolve(node)
         if resolve_current is None:
             return None
+        path = current
         current = resolve_current
-    return current
+    return current, path
