@@ -10,18 +10,15 @@ are not going well.
 
 **Phase:** 1 - SCPI parser and simulated instrument
 **Started:**  2026-09-03
-**Last session:** 2026-09-24
-**Hours invested so far:** 20
+**Last session:** 2026-09-25
+**Hours invested so far:** 21
 
 **Next concrete task:**
-> The `;` loop. Split a message on `;` and run each unit through `walk()`,
-> which already returns `(landed, path)`. `current_path` starts at root for
-> every message and becomes each unit's `path` (the route, per SCPI-99
-> §6.2.4). What a failed unit does to the rest of the message is still open
-> (see Open questions) — pick a provisional behaviour, write it in the
-> docstring, and test it. Before that, two small items in `walk()`: give
-> `path` a value before the loop, and add the four missing test rows
-> (`VOLT` from root, `NPLC` from `ac`, `:SENS`, `MEAS:XYZ`).
+> Split each unit into its header, an optional `?`, and its parameter text
+> (`SENS:VOLT:DC:NPLC 10` → header `SENS:VOLT:DC:NPLC`, command, `"10"`;
+> `MEAS:VOLT:DC? 10,0.001` → query with parameters). `walk_message` currently
+> assumes headers only, so a real unit with a parameter fails today. Only the
+> split — parsing the parameter values themselves is a later item.
 
 ---
 
@@ -286,6 +283,30 @@ backs up the route (`TRIG:SOUR EXT;COUNT 10` equals `TRIG:COUNT 10`), keeps a
 whether units after a failed one still run.
 Next: the `;` loop.
 
+### 2026-09-25 — 1 h
+Did: Wrote `walk_message(root, message)`: split on `;`, strip whitespace
+around each unit, walk it from the current path, and carry each unit's route
+into the next. Chose provisional behaviours for the two questions no free
+source answers — a failed unit ends the message (the list stops at its
+`None`), and a trailing `;` is an error — and wrote both into the docstring
+and the tests. Gave `walk()`'s `path` a starting value and added the
+single-keyword rows. Test tables now cover gotcha one, the route at message
+level, stopping at the first failure, whitespace after `;`, whitespace inside
+a header, a trailing newline, and an empty message.
+Stuck on: a test tree that reused one `NPLCycles` node under both `AC` and
+`DC` — `DuplicateParentError` was right; two commands with the same name are
+two nodes. `all(...)` without `assert` in front, so tests checked nothing and
+passed while three expectations were wrong. `==` on node lists can't tell the
+`AC` branch's `RANGe` from the `DC` branch's (same data), so the checks use
+`is`, element by element, with `zip(..., strict=True)`. `replace(" ", "")`
+also deleted spaces inside headers and would have glued `COUN 1` into
+`COUN1`; `strip()` only touches the ends.
+Learned: when choosing how strict to be without a spec, err toward stricter
+than real hardware — a false alarm on the simulator is harmless, a missed one
+fails on the bench. A test is only worth something if it can fail: checked
+that the table catches both a wrong branch and a wrong length.
+Next: split units into header, `?` and parameters.
+
 <!--
 ### YYYY-MM-DD — 2.5 h
 Did:
@@ -322,4 +343,10 @@ Things I do not understand yet and should ask about or look up.
 - After a unit fails with `-113`, do the later units in the same message still
   run? SCPI-99 §6.2.4 only says *earlier* units may take effect, and defers
   compound headers to IEEE 488.2 §7.6.1.5 (paid). Check the Keysight 34461A
-  programming manual's error-handling section next.
+  programming manual's error-handling section next. The Keysight Truevolt
+  guide (pp. 194–196, 459–461) doesn't say either. Provisional choice: the
+  message stops at the failed unit.
+- Is a trailing `;` before the terminator (`MEAS:VOLT:AC:RANG;`) legal? Not
+  covered by SCPI-99 Volume 1 or the Keysight guide; it's in IEEE 488.2's
+  message grammar. Provisional choice: an error, because a simulator should be
+  at least as strict as real hardware.

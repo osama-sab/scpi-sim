@@ -39,3 +39,39 @@ def walk(root: Node, current: Node, header: str) -> "tuple[Node, Node] | None":
         path = current
         current = resolve_current
     return current, path
+
+
+def walk_message(root: Node, message: str) -> list[Node | None]:
+    """Walk every ``;``-separated unit of `message` and return where each landed.
+
+    The current path starts at `root` for every message and, after each unit,
+    becomes that unit's route: the node before its last keyword (see `walk`).
+    Whitespace around each unit is removed; whitespace inside a header is not,
+    so ``"MEAS: VOLT"`` still fails.
+
+    Provisional, pending IEEE 488.2:
+
+    - A unit that doesn't resolve adds ``None`` and ends the message; later
+      units are not walked, so the list stops at the failure.
+    - A trailing ``;`` leaves an empty last unit, which counts as a failure.
+
+    Parameters
+    ----------
+    root
+        The top of the command tree.
+    message
+        One program message: units separated by ``;``, headers only, with no
+        parameters and no ``?``.
+    """
+    result = message.split(";")
+    current_path = root
+    result_list: list[Node | None] = []
+    for res in result:
+        res = res.strip()
+        outcome = walk(root, current_path, res)
+        if outcome is None:
+            result_list.append(None)
+            return result_list
+        landed, current_path = outcome
+        result_list.append(landed)
+    return result_list
