@@ -2,7 +2,7 @@
 
 import pytest
 
-from scpi_sim.parser import walk, walk_message
+from scpi_sim.parser import split_unit, walk, walk_message
 from scpi_sim.tree import Node
 
 dc = Node("DC")
@@ -158,3 +158,43 @@ def test_walk_fails_with_none(start: Node, header: str) -> None:
 def test_walk_message_is_none(message: str, expected: list[Node | None]) -> None:
     test_result = walk_message(root, message)
     assert all(x is y for x, y in zip(test_result, expected, strict=True))
+
+
+@pytest.mark.parametrize(
+    ("entry", "expectation"),
+    [
+        ("NPLC", ("NPLC", False, "")),
+        ("NPLC 10", ("NPLC", False, "10")),
+        ("NPLC?", ("NPLC", True, "")),
+        ("MEAS:VOLT:DC? 10,0.001", ("MEAS:VOLT:DC", True, "10,0.001")),
+        (" MEAS:VOLT:DC? 10,0.001 ", ("MEAS:VOLT:DC", True, "10,0.001")),
+        ("MEAS:VOLT:DC?\t10,0.001", ("MEAS:VOLT:DC", True, "10,0.001")),
+        ("VOLT?:DC", None),
+        ("MEAS: VOLT", ("MEAS:", False, "VOLT")),
+        ("MEAS:", ("MEAS:", False, "")),
+        ("  ", None),
+        ("NPLC\t10", ("NPLC", False, "10")),
+        ('DISP:DATA "Hello, world!"', ("DISP:DATA", False, '"Hello, world!"')),
+        ('DISP:TEXT "Ready?"', ("DISP:TEXT", False, '"Ready?"')),
+        ("NPLC 10 ", ("NPLC", False, "10")),
+    ],
+    ids=[
+        "only-header",
+        "header-and-parameter",
+        "header-and-query",
+        "header-query-parameter",
+        "multiple-whitespaces",
+        "tab-query",
+        "query-wrong-place",
+        "split-in-header",
+        "broken-header",
+        "empty-str",
+        "tab-no-query",
+        "spaces-inside-parameter",
+        "?-inside-parameter",
+        "trailing-whitespace",
+    ],
+)
+def test_split_unit(entry: str, expectation: tuple[str, bool, str] | None) -> None:
+    test_output = split_unit(entry)
+    assert test_output == expectation

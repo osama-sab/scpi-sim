@@ -41,6 +41,42 @@ def walk(root: Node, current: Node, header: str) -> "tuple[Node, Node] | None":
     return current, path
 
 
+def split_unit(unit: str) -> tuple[str, bool, str] | None:
+    """Split one message unit into ``(header, is_query, parameter_text)``.
+
+    The header ends at the first whitespace; everything after that gap is the
+    parameter text, with whitespace trimmed from its ends only, so spaces
+    inside it (``'"Hello, world!"'``) are kept. A ``?`` at the end of the
+    header marks a query and is removed from the returned header.
+
+    The header itself isn't checked here: ``"MEAS:"`` is returned as it is, and
+    `walk` rejects it later. Parameter text is not parsed.
+
+    Returns `None` for an empty or whitespace-only unit, and for a ``?``
+    anywhere in the header except at its end (``"VOLT?:DC"``).
+    """
+    list_unit = unit.split(maxsplit=1)  # split once
+    if not list_unit:
+        return None
+    header = list_unit[0]
+    is_query = False
+    # Check: list_unit consists of one or two elements
+    if len(list_unit) == 2:
+        parameter_text = list_unit[1]
+        parameter_text = parameter_text.rstrip()
+    else:
+        parameter_text = ""
+    # Check: header is a query
+    if "?" in header:
+        if header[-1] == "?":
+            is_query = True
+            header = header[:-1]
+        else:
+            return None
+    result = (header, is_query, parameter_text)
+    return result
+
+
 def walk_message(root: Node, message: str) -> list[Node | None]:
     """Walk every ``;``-separated unit of `message` and return where each landed.
 

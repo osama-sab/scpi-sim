@@ -10,15 +10,15 @@ are not going well.
 
 **Phase:** 1 - SCPI parser and simulated instrument
 **Started:**  2026-09-03
-**Last session:** 2026-09-25
-**Hours invested so far:** 21
+**Last session:** 2026-09-26
+**Hours invested so far:** 22
 
 **Next concrete task:**
-> Split each unit into its header, an optional `?`, and its parameter text
-> (`SENS:VOLT:DC:NPLC 10` → header `SENS:VOLT:DC:NPLC`, command, `"10"`;
-> `MEAS:VOLT:DC? 10,0.001` → query with parameters). `walk_message` currently
-> assumes headers only, so a real unit with a parameter fails today. Only the
-> split — parsing the parameter values themselves is a later item.
+> Wire `split_unit` into `walk_message`, so a real unit with a `?` or a
+> parameter (`NPLC 10`, `MEAS:VOLT:DC? 10,0.001`) resolves instead of failing.
+> First decide what `walk_message` returns per unit once it knows more than
+> the landed node: whether it was a query, and its parameter text. Parsing
+> the parameter values themselves is still a later item.
 
 ---
 
@@ -51,8 +51,8 @@ honest record of what I learned.
 - [x] Optional bracketed keywords resolve
 - [ ] ⁺ Nested optional keywords resolve
 - [ ] ⁺ Ambiguity detected at tree-build time, error naming both competing paths
-- [ ] Leading colon, semicolon chaining
-- [ ] ⁺ Current path carried across chained units, reset at the terminator
+- [x] Leading colon, semicolon chaining
+- [x] ⁺ Current path carried across chained units, reset at the terminator
 - [ ] ⁺ Current path is per-connection state, not module-level
 - [ ] ⁺ Common commands (`*XYZ`) leave the current path untouched
 - [ ] Query vs command distinction
