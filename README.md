@@ -10,9 +10,28 @@ driver. Everything runs without hardware.
   explicit timeouts, error-queue checking.
 - **`tests/`** — runs entirely without an instrument attached.
 
+## How this project uses AI
+
+This is a personal project for learning SCPI and instrument-driver design. I use
+Claude (Anthropic's AI assistant) as a tutor and reviewer, with a fixed split of
+responsibilities.
+
+Claude does:
+
+- Final checks and sanity checks before each commit
+- Docstrings
+- Planning and maintaining `PROGRESS.md`
+- `pyproject.toml` and other configuration files
+
+Claude does not:
+
+- Write the SCPI code (parser, error queue, status registers, driver logic)
+- Give direct solutions, even when asked
+- Make design decisions; those choices are mine
+
 ## Quickstart
 
-```
+```bash
 uv sync
 uv run pytest
 ```
