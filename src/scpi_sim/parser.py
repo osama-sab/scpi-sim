@@ -1,4 +1,6 @@
-"""Walking a colon-separated SCPI header through the command tree."""
+"""Parsing SCPI program messages: splitting units and walking headers."""
+
+from dataclasses import dataclass
 
 from scpi_sim.tree import Node
 
@@ -77,37 +79,69 @@ def split_unit(unit: str) -> tuple[str, bool, str] | None:
     return result
 
 
-def walk_message(root: Node, message: str) -> list[Node | None]:
-    """Walk every ``;``-separated unit of `message` and return where each landed.
+@dataclass(frozen=True)
+class ParsedUnit:
+    """One message unit whose header resolved to a node in the command tree.
 
-    The current path starts at `root` for every message and, after each unit,
-    becomes that unit's route: the node before its last keyword (see `walk`).
-    Whitespace around each unit is removed; whitespace inside a header is not,
-    so ``"MEAS: VOLT"`` still fails.
+    Attributes
+    ----------
+    node
+        The node the header landed on. Compare it with ``is``: two nodes with
+        the same mnemonic in different branches (``AC:RANGe``, ``DC:RANGe``)
+        compare equal with ``==``.
+    is_query
+        True if the header ended in ``?``.
+    parameters
+        Everything after the header, trimmed at its ends but not parsed, e.g.
+        ``"10,0.001"``; ``""`` if the unit had no parameters.
+    """
+
+    node: Node
+    is_query: bool
+    parameters: str
+
+
+def walk_message(root: Node, message: str) -> list[ParsedUnit | None]:
+    """Parse every ``;``-separated unit of `message`, one `ParsedUnit` per unit.
+
+    Each unit is split by `split_unit` into header, query flag and parameter
+    text, and only the header is walked. The current path starts at `root` for
+    every message and, after each unit, becomes that unit's route: the node
+    before its last keyword (see `walk`). Whitespace around each unit is
+    ignored; whitespace inside a header is not, so ``"MEAS: VOLT"`` fails.
 
     Provisional, pending IEEE 488.2:
 
-    - A unit that doesn't resolve adds ``None`` and ends the message; later
-      units are not walked, so the list stops at the failure.
-    - A trailing ``;`` leaves an empty last unit, which counts as a failure.
+    - A unit that can't be split or doesn't resolve adds ``None`` and ends the
+      message; later units are not parsed, so the list stops at the failure.
+    - An empty unit counts as a failure: a trailing ``;``, or ``;;``.
+
+    Known limitation: the message is split on every ``;``, including one
+    inside a quoted string parameter (``DISP:TEXT "a;b"``), which cuts that
+    unit in two.
 
     Parameters
     ----------
     root
         The top of the command tree.
     message
-        One program message: units separated by ``;``, headers only, with no
-        parameters and no ``?``.
+        One program message: units separated by ``;``, each a header with an
+        optional trailing ``?`` and optional parameter text.
     """
     result = message.split(";")
     current_path = root
-    result_list: list[Node | None] = []
+    result_list: list[ParsedUnit | None] = []
     for res in result:
-        res = res.strip()
-        outcome = walk(root, current_path, res)
+        value = split_unit(res)
+        if value is None:
+            result_list.append(None)
+            return result_list
+        header, query, parameter = value
+        outcome = walk(root, current_path, header)
         if outcome is None:
             result_list.append(None)
             return result_list
         landed, current_path = outcome
-        result_list.append(landed)
+        result_unit = ParsedUnit(node=landed, is_query=query, parameters=parameter)
+        result_list.append(result_unit)
     return result_list

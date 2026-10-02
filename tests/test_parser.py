@@ -2,7 +2,7 @@
 
 import pytest
 
-from scpi_sim.parser import split_unit, walk, walk_message
+from scpi_sim.parser import ParsedUnit, split_unit, walk, walk_message
 from scpi_sim.tree import Node
 
 dc = Node("DC")
@@ -125,18 +125,40 @@ def test_walk_fails_with_none(start: Node, header: str) -> None:
 @pytest.mark.parametrize(
     ("message", "expected"),
     [
-        ("MEAS:VOLT:AC:RANG;NPLC", [rang_ac, nplc_ac]),
-        ("MEAS:VOLT:AC:RANG;:MEAS:VOLT:DC:NPLC", [rang_ac, nplc_dc]),
-        ("MEAS:VOLT:AC;NPLC", [ac, None]),
-        ("VOLT;MEAS:VOLT:AC", [volt_sense, ac]),
-        ("MEAS:VOLT:AC:RANG;XYZ;NPLC", [rang_ac, None]),
+        (
+            "MEAS:VOLT:AC:RANG;NPLC",
+            [ParsedUnit(rang_ac, False, ""), ParsedUnit(nplc_ac, False, "")],
+        ),
+        (
+            "MEAS:VOLT:AC:RANG;:MEAS:VOLT:DC:NPLC",
+            [ParsedUnit(rang_ac, False, ""), ParsedUnit(nplc_dc, False, "")],
+        ),
+        ("MEAS:VOLT:AC;NPLC", [ParsedUnit(ac, False, ""), None]),
+        (
+            "VOLT;MEAS:VOLT:AC",
+            [ParsedUnit(volt_sense, False, ""), ParsedUnit(ac, False, "")],
+        ),
+        ("MEAS:VOLT:AC:RANG;XYZ;NPLC", [ParsedUnit(rang_ac, False, ""), None]),
         ("XYZ;MEAS", [None]),
-        ("MEAS:VOLT:AC:RANG", [rang_ac]),
-        ("MEAS:VOLT:AC:RANG;", [rang_ac, None]),
-        ("MEAS:VOLT:AC:RANG; NPLC", [rang_ac, nplc_ac]),
+        ("MEAS:VOLT:AC:RANG", [ParsedUnit(rang_ac, False, "")]),
+        ("MEAS:VOLT:AC:RANG;", [ParsedUnit(rang_ac, False, ""), None]),
+        (
+            "MEAS:VOLT:AC:RANG; NPLC",
+            [ParsedUnit(rang_ac, False, ""), ParsedUnit(nplc_ac, False, "")],
+        ),
         ("MEAS: VOLT:AC", [None]),
-        ("MEAS:VOLT:AC:RANG;\tNPLC", [rang_ac, nplc_ac]),
-        ("MEAS:VOLT:AC:RANG\n", [rang_ac]),
+        (
+            "MEAS:VOLT:AC:RANG;\tNPLC",
+            [ParsedUnit(rang_ac, False, ""), ParsedUnit(nplc_ac, False, "")],
+        ),
+        ("MEAS:VOLT:AC:RANG\n", [ParsedUnit(rang_ac, False, "")]),
+        ("MEAS:VOLT:DC? 10,0.001", [ParsedUnit(dc_v, True, "10,0.001")]),
+        (
+            "MEAS:VOLT:AC:RANG 10;NPLC?",
+            [ParsedUnit(rang_ac, False, "10"), ParsedUnit(nplc_ac, True, "")],
+        ),
+        ("MEAS:VOLT:AC:RANG;VOLT?:DC;NPLC", [ParsedUnit(rang_ac, False, ""), None]),
+        (";;", [None]),
         ("", [None]),
     ],
     ids=[
@@ -152,12 +174,27 @@ def test_walk_fails_with_none(start: Node, header: str) -> None:
         "no_whitespace_inside_header",
         "whitespace_after_semicolon",
         "newline_terminator",
+        "standard_message_query",
+        "path_parameter_query",
+        "bad_query",
+        "semicolon_error",
         "empty_message",
     ],
 )
-def test_walk_message_is_none(message: str, expected: list[Node | None]) -> None:
+def test_walk_message(message: str, expected: list[ParsedUnit | None]) -> None:
+    """Each unit gives its node (by identity), query flag and parameter text.
+
+    A failed unit appears as None and ends the list; lengths must match exactly.
+    """
     test_result = walk_message(root, message)
-    assert all(x is y for x, y in zip(test_result, expected, strict=True))
+    for x, y in zip(test_result, expected, strict=True):
+        if y is None:
+            assert x is None
+        else:
+            assert x is not None
+            assert x.node is y.node
+            assert x.is_query == y.is_query
+            assert x.parameters == y.parameters
 
 
 @pytest.mark.parametrize(

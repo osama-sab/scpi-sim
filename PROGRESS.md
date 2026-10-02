@@ -10,15 +10,16 @@ are not going well.
 
 **Phase:** 1 - SCPI parser and simulated instrument
 **Started:**  2026-09-03
-**Last session:** 2026-09-26
-**Hours invested so far:** 22
+**Last session:** 2026-10-02
+**Hours invested so far:** 23
 
 **Next concrete task:**
-> Wire `split_unit` into `walk_message`, so a real unit with a `?` or a
-> parameter (`NPLC 10`, `MEAS:VOLT:DC? 10,0.001`) resolves instead of failing.
-> First decide what `walk_message` returns per unit once it knows more than
-> the landed node: whether it was a query, and its parameter text. Parsing
-> the parameter values themselves is still a later item.
+> Query vs command distinction: `walk_message` should reject a query on a node
+> whose `queryable` is `False` (`NPLC?` where only setting is allowed) and a
+> command on a node whose `settable` is `False`. Both flags already exist on
+> `Node`; nothing reads them yet. First decide where the check lives —
+> `walk_message`, or a separate step after it — and what a rejection returns
+> until the error queue exists.
 
 ---
 
@@ -307,6 +308,53 @@ fails on the bench. A test is only worth something if it can fail: checked
 that the table catches both a wrong branch and a wrong length.
 Next: split units into header, `?` and parameters.
 
+### 2026-09-26 — 1 h (entry written 2026-10-02)
+Did: Wrote `split_unit(unit)`, returning `(header, is_query, parameter_text)`
+or `None`. The header ends at the first whitespace (`split(maxsplit=1)`), the
+parameter text keeps its inner spaces, and a `?` counts only at the end of
+the header. Kept it separate from `walk`: splitting a unit is message syntax,
+resolving a header is the command tree. 14-row table.
+Stuck on: the first version rejected units with no parameters, and the test
+encoded the same bug; it also took only the second word as the parameter,
+split on spaces only (no tabs), searched the whole unit for `?` (so
+`DISP:TEXT "Ready?"` became a query), and crashed on an empty unit.
+Learned: `split()` with no argument splits on any whitespace and drops empty
+pieces; `split(" ")` does neither. A test written from the code's current
+output can lock a bug in.
+Next: wire `split_unit` into `walk_message`.
+
+### 2026-10-02 — 1 h
+Did: Wired `split_unit` into `walk_message`, which now returns
+`list[ParsedUnit | None]`. `ParsedUnit` is a small dataclass with `node`,
+`is_query` and `parameters`, chosen over a tuple so callers write
+`unit.is_query` rather than `unit[1]`, with room for parsed values later.
+Only the header goes to `walk`; `current_path` stays a local variable,
+because it's parser state, not part of any unit's result. Rewrote the
+`walk_message` table to expect `ParsedUnit`s and compare field by field,
+then added rows that need the new fields: a query with parameters, a query
+on the second unit (`RANG 10;NPLC?`), `VOLT?:DC` mid-message, and `;;`.
+Checked they can fail: forcing the query flag to `False`, emptying the
+parameters, and re-introducing both of today's `None`-handling bugs each turn
+at least one row red.
+Stuck on: first wrote the dataclass with the call-site values in the
+`class` line (defining and constructing at once). Then a `None` from
+`split_unit` was silently skipped, so `VOLT?:DC;MEAS` still ran `MEAS`; then
+`.node` was appended instead of the unit so the *old* tests passed while
+mypy failed; then an extra `res != ""` branch duplicated a failure
+`split_unit` already handled. In the test: `is` between a `ParsedUnit` the
+test built and one the parser built (always `False`: different objects), and
+a conversion loop that dropped `None`s, so the lengths stopped matching.
+Learned: `is` asks "same object in memory" — right for the node, wrong for
+anything freshly built; everything else compares with `==`. A dataclass's
+generated `==` compares fields with `==`, so it can't tell `AC:RANGe` from
+`DC:RANGe`. When a return type changes, red old tests are the signal to
+update the tests; bending the code back to fit them is the `"ROOT:"` mistake
+again. Many failing rows: group them by error type first — each type was one
+cause. Handle each failure once, first, and return early. A failing input
+placed alone can hide a bug: `VOLT?:DC` on its own gives `[None]` whether or
+not the loop stops, so it belongs mid-message.
+Next: query vs command distinction, using `queryable` and `settable`.
+
 <!--
 ### YYYY-MM-DD — 2.5 h
 Did:
@@ -350,3 +398,7 @@ Things I do not understand yet and should ask about or look up.
   covered by SCPI-99 Volume 1 or the Keysight guide; it's in IEEE 488.2's
   message grammar. Provisional choice: an error, because a simulator should be
   at least as strict as real hardware.
+- A `;` inside a quoted string parameter (`DISP:TEXT "a;b"`) splits the
+  message there, because `walk_message` splits on `;` before anything knows
+  about quotes. Fix belongs with parameter parsing; documented in the
+  `walk_message` docstring as a known limitation until then.
