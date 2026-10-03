@@ -10,16 +10,14 @@ are not going well.
 
 **Phase:** 1 - SCPI parser and simulated instrument
 **Started:**  2026-09-03
-**Last session:** 2026-10-02
-**Hours invested so far:** 23
+**Last session:** 2026-10-03
+**Hours invested so far:** 27
 
 **Next concrete task:**
-> Query vs command distinction: `walk_message` should reject a query on a node
-> whose `queryable` is `False` (`NPLC?` where only setting is allowed) and a
-> command on a node whose `settable` is `False`. Both flags already exist on
-> `Node`; nothing reads them yet. First decide where the check lives —
-> `walk_message`, or a separate step after it — and what a rejection returns
-> until the error queue exists.
+> Nested optional keywords resolve: a keyword below an optional node that is
+> itself inside another optional node — `[A:][B:]C`, reached by typing just
+> `C`. `resolve()` already recurses into optional children, so it may already
+> work — write the test first and let it decide whether any code changes.
 
 ---
 
@@ -61,9 +59,9 @@ honest record of what I learned.
 
 **Message syntax (1.1b) — ⁺ absent from the build plan entirely**
 - [ ] ⁺ Whitespace separates header from parameters; commas between parameters
-- [ ] ⁺ Queries may carry parameters (`MEAS:VOLT:DC? 10,0.001`)
+- [x] ⁺ Queries may carry parameters (`MEAS:VOLT:DC? 10,0.001`)
 - [ ] ⁺ Response message is one line; multiple queries joined by `;`
-- [ ] ⁺ Empty message unit (`;;`) rejected
+- [x] ⁺ Empty message unit (`;;`) rejected
 - [ ] ⁺ Keyword numeric suffix (`CHANnel2`); absent suffix means 1
 
 **Parameters (1.2)**
@@ -355,6 +353,49 @@ placed alone can hide a bug: `VOLT?:DC` on its own gives `[None]` whether or
 not the loop stops, so it belongs mid-message.
 Next: query vs command distinction, using `queryable` and `settable`.
 
+### 2026-10-03 — 4 h (across 2 and 3 October)
+Did: Query vs command distinction. Read SCPI-99 first: §6.2.3 (p. 29) says
+both forms exist unless a node is marked `[query only]` or `[no query]`, and
+p. 136 marks `MEASure:<function>?` query only (`CONFigure` is the command
+twin). So `Node`'s `settable`/`queryable` now default to `True`, and every
+pure path node (`SENSe`, `VOLTage`, `MEASure`, the root) is flagged
+explicitly as neither — "has children" can't be used to infer it
+(`DISP ON` is valid). Added a command-only `CLEar` under `SENSe` so the test
+tree covers all four flag combinations. Wrote `helper_parser(node,
+is_query)`: the query flag picks which flag decides — the two-term minimal
+DNF, i.e. a 2:1 multiplexer. `walk_message` calls it after `walk`; a
+disallowed form adds `None` and ends the message, the same as the other two
+failures. Tested the helper alone with the full 8-row truth table (each row
+builds its own node), plus message rows for a query on a command-only node,
+bare `SENS`, and a rejected form mid-message with the earlier unit kept.
+Decided: a bad form returns `None`, not an exception. A client's bad command
+is input to report, not a reason to crash the server — and raising would
+discard the units already parsed in the message. Exceptions stay for bugs in
+the tree itself (`InvalidMnemonicError`, `DuplicateParentError`).
+Stuck on: first claimed `MEAS:VOLT:DC` has a command form — p. 136 says
+query only. First rule was "`queryable` must equal the query flag", which
+rejects `NPLC 10` on a node allowing both; then answered every command row
+of the truth table "yes" (only checking queries). Flagged the two `MEAS`
+nodes backwards and changed `MEAS:VOLT:DC? 10,0.001` to expect `None` to
+match — the test-bending mistake a third time. The first helper was the
+truth table as a dict, which would have made the test a copy of the code.
+`test_helper` took four attempts: a `return` instead of an `assert`, a `for`
+loop inside a parametrized test, and rows describing each case twice (a tree
+node and a key) that already disagreed on one row. Several failure rows
+failed at the wrong stage — `VOLT:CLE?` (no `CLE` under `VOLT`), a `?`
+mid-header, and `SENS:CLE?` resolved relative to `DC` (gotcha one in my own
+test) — so they never reached the new check.
+Learned: which node allows which form is data about one instrument, not a
+parser rule — it lives on the tree, the rule lives in the helper. Code the
+rule, test it against the table; a test that copies the implementation
+can't catch its mistakes. `parametrize` already is the loop: one row, one
+run. A failure row must fail at the stage it's named for — check by
+breaking that stage on purpose (helper forced to `True`: exactly the three
+new rows went red). When a change breaks a row's first unit, the row may
+silently stop testing what it's named for (`gotcha_one`,
+`route_at_message_level`).
+Next: nested optional keywords.
+
 <!--
 ### YYYY-MM-DD — 2.5 h
 Did:
@@ -402,3 +443,11 @@ Things I do not understand yet and should ask about or look up.
   message there, because `walk_message` splits on `;` before anything knows
   about quotes. Fix belongs with parameter parsing; documented in the
   `walk_message` docstring as a known limitation until then.
+- Trailing defaults: SCPI's `[SOURce:]VOLTage[:LEVel][:IMMediate][:AMPLitude]`
+  means `VOLT 5` reaches `AMPLitude` by continuing *past* the last typed
+  keyword through optional children. `walk` stops at the last typed keyword,
+  and `resolve()` only skips optional nodes *before* a keyword. Not on the
+  checklist yet — decide whether the simulator's tree needs it.
+- Which error code fires for a form the node doesn't allow (`CLE?`,
+  `MEAS:VOLT:DC 10`)? Look it up in SCPI-99 §21.8.9 (PDF pp. 519–521) and the
+  Keysight error list (p. 461) before the error queue replaces the `None`.

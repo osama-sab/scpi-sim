@@ -16,8 +16,8 @@ class Node:
     """One keyword in the SCPI command tree."""
 
     mnemonic: str
-    settable: bool = False
-    queryable: bool = False
+    settable: bool = True
+    queryable: bool = True
     optional: bool = False
     children: dict[str, "Node"] = field(default_factory=dict)
     parent: "Node | None" = field(default=None, init=False, repr=False, compare=False)

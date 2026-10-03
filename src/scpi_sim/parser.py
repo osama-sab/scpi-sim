@@ -79,6 +79,17 @@ def split_unit(unit: str) -> tuple[str, bool, str] | None:
     return result
 
 
+def helper_parser(node: Node, is_query: bool) -> bool:
+    """Return whether `node` accepts a unit in this form: query or command.
+
+    The query flag picks which of the node's flags decides: a query needs
+    ``queryable``, a command needs ``settable``. SCPI-99 section 6.2.3 makes
+    both forms the default and marks exceptions as ``[query only]`` or
+    ``[no query]``; a path node such as a bare ``SENSe`` allows neither.
+    """
+    return (node.settable and not is_query) or (node.queryable and is_query)
+
+
 @dataclass(frozen=True)
 class ParsedUnit:
     """One message unit whose header resolved to a node in the command tree.
@@ -112,8 +123,9 @@ def walk_message(root: Node, message: str) -> list[ParsedUnit | None]:
 
     Provisional, pending IEEE 488.2:
 
-    - A unit that can't be split or doesn't resolve adds ``None`` and ends the
-      message; later units are not parsed, so the list stops at the failure.
+    - A unit that can't be split, doesn't resolve, or uses a form its node
+      doesn't allow (see `helper_parser`) adds ``None`` and ends the message;
+      later units are not parsed, so the list stops at the failure.
     - An empty unit counts as a failure: a trailing ``;``, or ``;;``.
 
     Known limitation: the message is split on every ``;``, including one
@@ -142,6 +154,10 @@ def walk_message(root: Node, message: str) -> list[ParsedUnit | None]:
             result_list.append(None)
             return result_list
         landed, current_path = outcome
-        result_unit = ParsedUnit(node=landed, is_query=query, parameters=parameter)
-        result_list.append(result_unit)
+        if helper_parser(landed, query):
+            result_unit = ParsedUnit(node=landed, is_query=query, parameters=parameter)
+            result_list.append(result_unit)
+        else:
+            result_list.append(None)
+            return result_list
     return result_list
