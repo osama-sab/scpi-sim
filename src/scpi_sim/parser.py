@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from scpi_sim.tree import Node
 
 
-def walk(root: Node, current: Node, header: str) -> "tuple[Node, Node] | None":
+def walk(root: Node, current: Node, header: str) -> tuple[Node, Node] | None:
     """Resolve `header` and return ``(landed, path)``, or `None` if a keyword misses.
 
     A header with a leading colon starts from `root`; otherwise it starts from

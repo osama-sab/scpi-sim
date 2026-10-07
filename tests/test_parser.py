@@ -305,3 +305,87 @@ def test_helper(
     node = Node("NPLCycles", settable=settable, queryable=queryable)
     result_bool = helper_parser(node, is_query)
     assert result_bool == expected
+
+
+leaf = Node("LEAF")
+inner = Node("INNer", optional=True, children={leaf.short(): leaf, leaf.long(): leaf})
+outer = Node(
+    "OUTer",
+    optional=True,
+    children={
+        inner.short(): inner,
+        inner.long(): inner,
+    },
+)
+origin = Node("ORIGin", children={outer.short(): outer, outer.long(): outer})
+
+
+@pytest.mark.parametrize(
+    ("start", "header", "expected_landed", "expected_path"),
+    [
+        (origin, "OUTER:INNER:LEAF", leaf, inner),
+        (origin, "OUTER:LEAF", leaf, outer),
+        (origin, "INNER:LEAF", leaf, inner),
+        (origin, "LEAF", leaf, origin),
+    ],
+    ids=[
+        "full_header",
+        "outer_header",
+        "inner_header",
+        "both_skipped",
+    ],
+)
+def test_nested_optional_keywords(
+    start: Node, header: str, expected_landed: Node, expected_path: Node
+) -> None:
+    """Either or both of two nested optional nodes may be skipped.
+
+    The path is still the node before the last typed keyword: skipped default
+    nodes don't alter it (SCPI-99 section 6.2.4), so ``LEAF`` alone leaves it
+    at the start.
+    """
+    outcome = walk(origin, start, header)
+    assert outcome is not None
+    current, path = outcome
+    assert path is expected_path
+    assert current is expected_landed
+
+
+@pytest.mark.parametrize(
+    ("outer_optional", "inner_optional", "header"),
+    [
+        (True, False, "OUTER:LEAF"),
+        (False, True, "INNER:LEAF"),
+    ],
+    ids=[
+        "outer_optional",
+        "inner_optional",
+    ],
+)
+def test_nested_optional_negative(
+    outer_optional: bool, inner_optional: bool, header: str
+) -> None:
+    """Skipping a required node in a nested chain fails, at either level.
+
+    Each row is the all-optional tree with exactly one node made required,
+    and its header skips that node, so only the optional flag can explain
+    the failure. Each row builds its own tree: one tree can't hold both
+    flags, and a node can't have two parents.
+    """
+    leaf = Node("LEAF")
+    inner = Node(
+        "INNer",
+        optional=inner_optional,
+        children={leaf.short(): leaf, leaf.long(): leaf},
+    )
+    outer = Node(
+        "OUTer",
+        optional=outer_optional,
+        children={
+            inner.short(): inner,
+            inner.long(): inner,
+        },
+    )
+    origin = Node("ORIGin", children={outer.short(): outer, outer.long(): outer})
+    outcome = walk(origin, origin, header)
+    assert outcome is None

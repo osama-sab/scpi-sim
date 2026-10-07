@@ -10,14 +10,15 @@ are not going well.
 
 **Phase:** 1 - SCPI parser and simulated instrument
 **Started:**  2026-09-03
-**Last session:** 2026-10-03
-**Hours invested so far:** 27
+**Last session:** 2026-10-07
+**Hours invested so far:** 28
 
 **Next concrete task:**
-> Nested optional keywords resolve: a keyword below an optional node that is
-> itself inside another optional node — `[A:][B:]C`, reached by typing just
-> `C`. `resolve()` already recurses into optional children, so it may already
-> work — write the test first and let it decide whether any code changes.
+> Ambiguity detected at tree-build time: if two optional siblings each have a
+> child that matches the same keyword, `resolve()` silently returns whichever
+> it checks first. Decide how the tree catches that while it's being built,
+> and what the error says (the checklist asks for both competing paths).
+> Write the failing test first.
 
 ---
 
@@ -54,8 +55,8 @@ honest record of what I learned.
 - [x] ⁺ Current path carried across chained units, reset at the terminator
 - [ ] ⁺ Current path is per-connection state, not module-level
 - [ ] ⁺ Common commands (`*XYZ`) leave the current path untouched
-- [ ] Query vs command distinction
-- [ ] ⁺ Settable and queryable are independent flags — bare `SENS` is an error
+- [x] Query vs command distinction
+- [x] ⁺ Settable and queryable are independent flags — bare `SENS` is an error
 
 **Message syntax (1.1b) — ⁺ absent from the build plan entirely**
 - [ ] ⁺ Whitespace separates header from parameters; commas between parameters
@@ -395,6 +396,31 @@ new rows went red). When a change breaks a row's first unit, the row may
 silently stop testing what it's named for (`gotcha_one`,
 `route_at_message_level`).
 Next: nested optional keywords.
+
+### 2026-10-07 — 1 h
+Did: Nested optional keywords (`[A:][B:]C` reached by typing `C`). Wrote the
+test first; it passed with no code change — `resolve()`'s recursion into
+optional children (16 September) already handles any depth. Positive table
+on a module-level tree: both optional nodes typed, each skipped alone, both
+skipped, with the path checked on every row (`LEAF` alone leaves it at the
+start — SCPI-99 §6.2.4 holds through two levels). Negative table: the same
+tree with exactly one node made required, and a header that skips that
+node, so `walk` must return `None`.
+Stuck on: the first single row unpacked `walk`'s result without the `None`
+check (mypy) and never checked the path. Then tried one table for positive
+and negative rows: the rows named nodes that the test only builds later, so
+the whole file failed with `NameError` at import — `parametrize` rows are
+evaluated when the module loads. Split into two tests. The first negative
+version typed the required node and asserted success, so it was a positive
+test; a `resolve()` that ignored `optional` entirely passed every row.
+Learned: a test that passes for a broken implementation proves nothing —
+negative rows are what pin the `optional` flag down. Build them as a
+controlled experiment: change exactly one flag from a passing case, so only
+that flag can explain the failure. Checked by running a `resolve()` that
+ignores `optional`: both negative rows went red, every positive row stayed
+green. Writing the test first is worth it even when no code changes: it
+turned "probably works" into a recorded fact.
+Next: ambiguity detected at tree-build time.
 
 <!--
 ### YYYY-MM-DD — 2.5 h
