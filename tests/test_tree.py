@@ -58,26 +58,24 @@ def test_mnemonic() -> None:
 def test_resolve() -> None:
     """resolve() matches directly, misses cleanly, and only skips optional children."""
     dc = Node("DC")
-    volt_sense = Node("VOLTage", children={dc.short(): dc, dc.long(): dc})
+    volt_sense = Node("VOLTage", children=[dc])
     sense = Node(
         "SENSe",
         optional=True,
-        children={volt_sense.short(): volt_sense, volt_sense.long(): volt_sense},
+        children=[volt_sense],
     )
 
     nplc = Node("NPLCycles")
-    ac = Node("AC", children={nplc.short(): nplc, nplc.long(): nplc})
-    volt = Node("VOLTage", children={ac.short(): ac, ac.long(): ac})
-    meas = Node("MEASure", children={volt.short(): volt, volt.long(): volt})
+    ac = Node("AC", children=[nplc])
+    volt = Node("VOLTage", children=[ac])
+    meas = Node("MEASure", children=[volt])
 
     root = Node(
         "ROOT",
-        children={
-            sense.short(): sense,
-            sense.long(): sense,
-            meas.short(): meas,
-            meas.long(): meas,
-        },
+        children=[
+            sense,
+            meas,
+        ],
     )
 
     key_word_short = "NPLC"
@@ -106,22 +104,26 @@ def test_resolve() -> None:
 def test_parent() -> None:
     """A child claimed by a second parent is rejected and keeps its first parent."""
     nplc = Node("NPLCycles")
-    ac = Node("AC", children={nplc.short(): nplc, nplc.long(): nplc})
-    volt = Node("VOLTage", children={ac.short(): ac, ac.long(): ac})
+    ac = Node("AC", children=[nplc])
+    volt = Node("VOLTage", children=[ac])
 
     with pytest.raises(DuplicateParentError):
-        Node("VOLTage", children={ac.short(): ac, ac.long(): ac})
+        Node("VOLTage", children=[ac])
     with pytest.raises(TypeError):
         Node("DC", parent=volt)  # type: ignore[call-arg]
-    with pytest.raises(DuplicateParentError):
-        a = Node("AC")
-        b = Node("DC")
-        Node("SENSe", children={"AC": a})
-        Node("VOLTage", children={"DC": b, "AC": a})
+    ac_sense = Node("AC")
+    dc = Node("DC")
+    sense = Node("SENSe", children=[ac_sense])
+    assert sense is ac_sense.parent
 
-    b = Node("DC")
-    c = Node("MEASure", children={"DC": b})
-    assert b.parent is c
+    with pytest.raises(DuplicateParentError):
+        Node("VOLTage", children=[dc, ac_sense])
+    assert dc.parent is None
+    assert ac_sense.parent is sense
+
+    curr = Node("CURRent")
+    meas = Node("MEASure", children=[curr])
+    assert curr.parent is meas
 
     assert volt is ac.parent
     assert None is volt.parent

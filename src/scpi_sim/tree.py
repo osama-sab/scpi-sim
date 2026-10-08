@@ -11,6 +11,14 @@ class DuplicateParentError(ValueError):
     """Raised when a child Node has more than one parent."""
 
 
+class AmbiguousPathError(ValueError):
+    """Raised when two of a Node's children could be reached by the same keyword.
+
+    Children of an optional node count as one level up (SCPI-99 section 6.2.2),
+    so this covers same-level collisions and ones through default nodes.
+    """
+
+
 @dataclass
 class Node:
     """One keyword in the SCPI command tree."""
@@ -19,12 +27,17 @@ class Node:
     settable: bool = True
     queryable: bool = True
     optional: bool = False
-    children: dict[str, "Node"] = field(default_factory=dict)
+    children: list["Node"] = field(default_factory=list)
+    _lookup: dict[str, "Node"] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
     parent: "Node | None" = field(default=None, init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
-        """Validate the mnemonic, then make this node the parent of its children.
+        """Validate the mnemonic, then adopt the children and index them.
 
+        Each child gets this node as its parent and is stored in the lookup
+        under both its short and long spelling, which is what `resolve` reads.
         Every child is checked before any is changed, so a failure leaves
         all children exactly as they were.
 
@@ -51,12 +64,17 @@ class Node:
         if len(self.mnemonic) > 12:
             raise InvalidMnemonicError("Max. 12 Characters for a mnemonic")
 
-        for node in self.children.values():
+        for node in self.children:
             if node.parent is not None and node.parent is not self:
                 raise DuplicateParentError("No duplicate parents")
-
-        for node in self.children.values():
+        for node in self.children:
             node.parent = self
+            self._lookup.update(
+                {
+                    node.short(): node,
+                    node.long(): node,
+                }
+            )
 
     def short(self) -> str:
         """Return the standard SCPI short form of the mnemonic."""
@@ -85,18 +103,12 @@ class Node:
 
     def resolve(self, keyword: str) -> "Node | None":
         """Return the child matching `keyword`, or `None` if nothing matches."""
-        node_key = Node("")
-        values_children = self.children.values()
-        for node in values_children:
-            if keyword.upper() == node.long():
-                node_key = node
-            if keyword.upper() == node.short():
-                node_key = node
-        if node_key in values_children:
-            return node_key
-        for word in values_children:
+        found = self._lookup.get(keyword.upper())
+        if found is not None:
+            return found
+        for word in self.children:
             if word.optional:
-                if word.resolve(keyword):
-                    node_key_2 = word.resolve(keyword)
-                    return node_key_2
+                found_below = word.resolve(keyword)
+                if found_below is not None:
+                    return found_below
         return None

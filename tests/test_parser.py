@@ -6,22 +6,18 @@ from scpi_sim.parser import ParsedUnit, helper_parser, split_unit, walk, walk_me
 from scpi_sim.tree import Node
 
 nplc = Node("NPLCycles")
-dc = Node("DC", children={nplc.short(): nplc, nplc.long(): nplc}, queryable=False)
-volt_sense = Node(
-    "VOLTage", children={dc.short(): dc, dc.long(): dc}, queryable=False, settable=False
-)
+dc = Node("DC", children=[nplc], queryable=False)
+volt_sense = Node("VOLTage", children=[dc], queryable=False, settable=False)
 
 clear = Node("CLEar", queryable=False)
 
 sense = Node(
     "SENSe",
     optional=True,
-    children={
-        volt_sense.short(): volt_sense,
-        volt_sense.long(): volt_sense,
-        clear.short(): clear,
-        clear.long(): clear,
-    },
+    children=[
+        volt_sense,
+        clear,
+    ],
     settable=False,
     queryable=False,
 )
@@ -34,50 +30,42 @@ nplc_ac = Node("NPLCycles")
 
 ac_v = Node(
     "AC",
-    children={
-        nplc_ac.short(): nplc_ac,
-        nplc_ac.long(): nplc_ac,
-        rang_ac.short(): rang_ac,
-        rang_ac.long(): rang_ac,
-    },
+    children=[
+        nplc_ac,
+        rang_ac,
+    ],
     settable=False,
 )
 dc_v = Node(
     "DC",
-    children={
-        nplc_dc.short(): nplc_dc,
-        nplc_dc.long(): nplc_dc,
-        rang_dc.short(): rang_dc,
-        rang_dc.long(): rang_dc,
-    },
+    children=[
+        nplc_dc,
+        rang_dc,
+    ],
     settable=False,
 )
 volt = Node(
     "VOLTage",
-    children={
-        ac_v.short(): ac_v,
-        ac_v.long(): ac_v,
-        dc_v.short(): dc_v,
-        dc_v.long(): dc_v,
-    },
+    children=[
+        ac_v,
+        dc_v,
+    ],
     settable=False,
     queryable=False,
 )
 meas = Node(
     "MEASure",
-    children={volt.short(): volt, volt.long(): volt},
+    children=[volt],
     settable=False,
     queryable=False,
 )
 
 root = Node(
     "ROOT",
-    children={
-        sense.short(): sense,
-        sense.long(): sense,
-        meas.short(): meas,
-        meas.long(): meas,
-    },
+    children=[
+        sense,
+        meas,
+    ],
     settable=False,
     queryable=False,
 )
@@ -308,16 +296,13 @@ def test_helper(
 
 
 leaf = Node("LEAF")
-inner = Node("INNer", optional=True, children={leaf.short(): leaf, leaf.long(): leaf})
+inner = Node("INNer", optional=True, children=[leaf])
 outer = Node(
     "OUTer",
     optional=True,
-    children={
-        inner.short(): inner,
-        inner.long(): inner,
-    },
+    children=[inner],
 )
-origin = Node("ORIGin", children={outer.short(): outer, outer.long(): outer})
+origin = Node("ORIGin", children=[outer])
 
 
 @pytest.mark.parametrize(
@@ -376,16 +361,15 @@ def test_nested_optional_negative(
     inner = Node(
         "INNer",
         optional=inner_optional,
-        children={leaf.short(): leaf, leaf.long(): leaf},
+        children=[leaf],
     )
     outer = Node(
         "OUTer",
         optional=outer_optional,
-        children={
-            inner.short(): inner,
-            inner.long(): inner,
-        },
+        children=[
+            inner,
+        ],
     )
-    origin = Node("ORIGin", children={outer.short(): outer, outer.long(): outer})
+    origin = Node("ORIGin", children=[outer])
     outcome = walk(origin, origin, header)
     assert outcome is None

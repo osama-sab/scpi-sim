@@ -10,15 +10,17 @@ are not going well.
 
 **Phase:** 1 - SCPI parser and simulated instrument
 **Started:**  2026-09-03
-**Last session:** 2026-10-07
-**Hours invested so far:** 28
+**Last session:** 2026-10-09
+**Hours invested so far:** 30
 
 **Next concrete task:**
-> Ambiguity detected at tree-build time: if two optional siblings each have a
-> child that matches the same keyword, `resolve()` silently returns whichever
-> it checks first. Decide how the tree catches that while it's being built,
-> and what the error says (the checklist asks for both competing paths).
-> Write the failing test first.
+> Ambiguity detection, step B: write the must-raise test for
+> `AmbiguousPathError` in `test_tree.py`, starting with the same-level case
+> from SCPI-99 p. 25 — `JSTart` and `JSTop` both shorten to `JST`. Now that
+> `Node` builds `_lookup` itself, find the moment in `__post_init__` where a
+> second child would claim a spelling that's already taken. Then the
+> promoted-through-a-default cases, then the must-not-raise rows
+> (`TIME`/`TIMer`; same names under required siblings).
 
 ---
 
@@ -49,7 +51,7 @@ honest record of what I learned.
 - [x] ⁺ Mnemonic validated when the tree is built (uppercase prefix is a real
       prefix, remainder lowercase, ≤ 12 chars)
 - [x] Optional bracketed keywords resolve
-- [ ] ⁺ Nested optional keywords resolve
+- [x] ⁺ Nested optional keywords resolve
 - [ ] ⁺ Ambiguity detected at tree-build time, error naming both competing paths
 - [x] Leading colon, semicolon chaining
 - [x] ⁺ Current path carried across chained units, reset at the terminator
@@ -421,6 +423,39 @@ ignores `optional`: both negative rows went red, every positive row stayed
 green. Writing the test first is worth it even when no code changes: it
 turned "probably works" into a recorded fact.
 Next: ambiguity detected at tree-build time.
+
+### 2026-10-09 — 2 h (across 8 and 9 October)
+Did: Read SCPI-99 on ambiguity first. §6.2.2 (p. 25): a mnemonic must not
+collide with another "at the same level, or one level different where a
+default node exists"; p. 26: nodes below a default are "promoted by one
+level". Its example, `JSTart`/`JSTop`, is forbidden (both short forms are
+`JST`); `TIME`/`TIMer` is allowed. That exposed a problem in my own design:
+with `children` built by hand as a dict, a second `JST` key silently
+overwrites the first before `Node` ever sees it. So step A, a refactor:
+`children` is now a list, and `Node` builds `_lookup` (spelling → child) in
+`__post_init__`, after all checks. `resolve()` now does its direct match
+with one `.get()` instead of a loop. Converted every test tree; no
+expectation changed. Added `AmbiguousPathError` (raised later, in step B —
+a colliding tree is a bug in the simulator, so it raises, like
+`InvalidMnemonicError`).
+Stuck on: removed the quotes from `list["Node"]` — `NameError`, because
+inside its own class body `Node` doesn't exist yet on Python 3.12/3.13.
+`default=None` and then `default_factory=list` on a dict field. Filled the
+lookup by *replacing* the dict each pass, so only the last child survived.
+`resolve()` took five attempts: a loop that never used the keyword (every
+input, even `banana`, returned the last child), a lowercase lookup into
+uppercase keys, `.get()` called twice, an `UnboundLocalError` on a miss,
+and a bare `return`. Then, while merging loops, folded the check loop into
+the assign loop — the single-loop design rejected on 22 September.
+Learned: a dict is asked one question by key, not scanned. Adding to a dict
+and replacing it are different operations. A quoted annotation is a
+forward reference. The order of children in a list can be the whole point
+of a test: the conversion had put the owned child first, so `test_parent`
+no longer exercised the half-wiring case, and it never asserted the free
+child's state anyway. With the order restored and that assertion added, it
+caught the merged-loop regression immediately — and a deliberately
+single-loop `__post_init__` now fails it.
+Next: step B, the must-raise rows for `AmbiguousPathError`.
 
 <!--
 ### YYYY-MM-DD — 2.5 h
