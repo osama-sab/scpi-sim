@@ -10,17 +10,15 @@ are not going well.
 
 **Phase:** 1 - SCPI parser and simulated instrument
 **Started:**  2026-09-03
-**Last session:** 2026-10-09
-**Hours invested so far:** 30
+**Last session:** 2026-10-10
+**Hours invested so far:** 37
 
 **Next concrete task:**
-> Ambiguity detection, step B: write the must-raise test for
-> `AmbiguousPathError` in `test_tree.py`, starting with the same-level case
-> from SCPI-99 p. 25 — `JSTart` and `JSTop` both shorten to `JST`. Now that
-> `Node` builds `_lookup` itself, find the moment in `__post_init__` where a
-> second child would claim a spelling that's already taken. Then the
-> promoted-through-a-default cases, then the must-not-raise rows
-> (`TIME`/`TIMer`; same names under required siblings).
+> Make `AmbiguousPathError` name both competing *paths*, not just mnemonics:
+> scenario 5 currently says `'LEAF' under ORIGin would match both LEAF and
+> LEAF`; it should show `LEAF` and `OUTer:INNer:LEAF`. A promoted node already
+> knows its `parent`, so walk up from it to the direct child. Test it with
+> `pytest.raises(AmbiguousPathError, match=...)`.
 
 ---
 
@@ -52,7 +50,9 @@ honest record of what I learned.
       prefix, remainder lowercase, ≤ 12 chars)
 - [x] Optional bracketed keywords resolve
 - [x] ⁺ Nested optional keywords resolve
-- [ ] ⁺ Ambiguity detected at tree-build time, error naming both competing paths
+- [ ] ⁺ Ambiguity detected at tree-build time (same level, and through
+      default nodes at any depth — SCPI-99 p. 25)
+- [ ] ⁺ Ambiguity error names both competing paths
 - [x] Leading colon, semicolon chaining
 - [x] ⁺ Current path carried across chained units, reset at the terminator
 - [ ] ⁺ Current path is per-connection state, not module-level
@@ -456,6 +456,44 @@ child's state anyway. With the order restored and that assertion added, it
 caught the merged-loop regression immediately — and a deliberately
 single-loop `__post_init__` now fails it.
 Next: step B, the must-raise rows for `AmbiguousPathError`.
+
+### 2026-10-10 — 7 h (across 9 and 10 October)
+Did: Step B, the ambiguity check. Same level first: pass 1 records every
+child's spellings in a local `seen` dict and raises `AmbiguousPathError`
+when a short form is already claimed (`JSTart`/`JSTop`, `AMP`/`AMPere`,
+`VOLT`/`VOLTage`; `TIME`/`TIMer` allowed). Then promotion: a new recursive
+`typeable_from_parent()` returns a child plus everything promoted up through
+it while it's optional, stopping at required nodes, and pass 1 checks every
+node in that list. `seen` is local and only for checking; `_lookup` holds
+direct children only. Added `DuplicateChildError` for the same object listed
+twice, told apart from ambiguity with `is`. Tests in `test_tree.py`: the two
+same-level tables (rows are mnemonics, nodes built in the test) and one
+function per promotion scenario — direct vs promoted, two optional
+siblings, two defaults deep, `JSTart` vs a promoted `JSTop`, `[TREE]`
+containing `TREE`, promotion stopping at a required node, the same name
+under required siblings, duplicate child — each asserting the children are
+still unadopted after a failed build.
+Stuck on: visualising promotion. Tried to look *up* from the child, which
+can't work: children are built first, so only the parent can see both
+sides. The picture that worked: remove an optional node's box and its
+children slide up beside their aunts and uncles — then it's a same-level
+check. The check went into the assigning loop twice (half-wiring again),
+first read `self._lookup` while it was still empty, and once used
+`resolve()`, which only finds the first match and depended on `_lookup`
+being empty. The recursion took five attempts: no recursion, result
+discarded, `append` + `extend` (duplicate node), `self` moved last, `self`
+removed (no base case). Test rows first shared module-level nodes that each
+row adopted; the duplicate-child check sat after the general raise and used
+`list.count()` (`==`).
+Learned: the parent is the first node that can see a collision. An optional
+node's children count as its siblings. `append` adds one element, `extend`
+adds each element; a recursion needs a base case. Check everything before
+changing anything — every check, and with its own scratch dict. Test the
+special case before the general one. `parametrize` when rows differ in
+values, separate functions when they differ in shape; rows hold plain
+values. Every same-level collision is a short-form collision, so checking
+`short()` against a lookup of both spellings is complete.
+Next: name both competing paths in the error message.
 
 <!--
 ### YYYY-MM-DD — 2.5 h

@@ -19,6 +19,10 @@ class AmbiguousPathError(ValueError):
     """
 
 
+class DuplicateChildError(ValueError):
+    """Raised when the same Node object is listed twice among one node's children."""
+
+
 @dataclass
 class Node:
     """One keyword in the SCPI command tree."""
@@ -34,12 +38,14 @@ class Node:
     parent: "Node | None" = field(default=None, init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
-        """Validate the mnemonic, then adopt the children and index them.
+        """Validate the mnemonic and the children, then adopt and index them.
 
-        Each child gets this node as its parent and is stored in the lookup
-        under both its short and long spelling, which is what `resolve` reads.
-        Every child is checked before any is changed, so a failure leaves
-        all children exactly as they were.
+        Pass 1 only checks: each child's parent, and every spelling typeable at
+        this level (each child plus what `typeable_from_parent` promotes through
+        it) for a clash. Pass 2 only changes: each child gets this node as its
+        parent and goes into the lookup under both spellings, which is what
+        `resolve` reads; promoted nodes are not indexed here. A failure in pass
+        1 leaves all children exactly as they were.
 
         Raises
         ------
@@ -48,7 +54,14 @@ class Node:
             isn't lowercase, or the mnemonic is longer than 12 characters.
         DuplicateParentError
             If any child already belongs to a different parent node.
+        DuplicateChildError
+            If the same node object appears more than once in `children`.
+        AmbiguousPathError
+            If two different nodes typeable at this level share a spelling, so
+            one keyword would match both; children of optional nodes count as
+            typeable here.
         """
+        seen: dict[str, Node] = {}
         n = len(self.short())
 
         if self.mnemonic[:n] != self.short():
@@ -66,7 +79,24 @@ class Node:
 
         for node in self.children:
             if node.parent is not None and node.parent is not self:
-                raise DuplicateParentError("No duplicate parents")
+                raise DuplicateParentError("No duplicate parent nodes")
+            for candidate in node.typeable_from_parent():
+                claimed_by = seen.get(candidate.short())
+                if claimed_by is candidate:
+                    raise DuplicateChildError("Children contains duplicate child node")
+                if claimed_by is not None:
+                    raise AmbiguousPathError(
+                        f"{candidate.short()!r} under {self.mnemonic} would match "
+                        f"both {claimed_by.mnemonic} and {candidate.mnemonic}"
+                    )
+
+                seen.update(
+                    {
+                        candidate.short(): candidate,
+                        candidate.long(): candidate,
+                    }
+                )
+
         for node in self.children:
             node.parent = self
             self._lookup.update(
@@ -75,6 +105,21 @@ class Node:
                     node.long(): node,
                 }
             )
+
+    def typeable_from_parent(self) -> list["Node"]:
+        """Return this node, plus everything promoted up through it if it's optional.
+
+        These are the nodes a parent can reach by typing one keyword because of
+        this child: the child itself and, through each optional (default) node,
+        that node's children too (SCPI-99 p. 26). Promotion stops at a required
+        node. The node itself comes first, so a parent checks it before anything
+        promoted through it.
+        """
+        list_nodes: list[Node] = [self]
+        if self.optional:
+            for child in self.children:
+                list_nodes.extend(child.typeable_from_parent())
+        return list_nodes
 
     def short(self) -> str:
         """Return the standard SCPI short form of the mnemonic."""

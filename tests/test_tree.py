@@ -1,6 +1,12 @@
 import pytest
 
-from scpi_sim.tree import DuplicateParentError, InvalidMnemonicError, Node
+from scpi_sim.tree import (
+    AmbiguousPathError,
+    DuplicateChildError,
+    DuplicateParentError,
+    InvalidMnemonicError,
+    Node,
+)
 
 
 def test_short() -> None:
@@ -135,3 +141,160 @@ def test_parent() -> None:
     ac_result = ac.resolve("NPLCycles")
     assert ac_result is not None
     assert ac is ac_result.parent
+
+
+@pytest.mark.parametrize(
+    ("mnemonic", "children_mnemonics"),
+    [
+        ("ROOT", ["JSTart", "JSTop"]),
+        ("CURRent", ["AMPerage", "AMPere"]),
+        ("ORIGin", ["VOLT", "VOLTage"]),
+    ],
+    ids=[
+        "JST-short-collision",
+        "AMP-short-collision",
+        "long-equals-short",
+    ],
+)
+def test_same_level_collision_raises(
+    mnemonic: str, children_mnemonics: list[str]
+) -> None:
+    """Siblings that share a spelling are rejected (SCPI-99 p. 25, JSTart/JSTop).
+
+    Rows hold only mnemonics; each run builds fresh nodes from them.
+    """
+    children_list: list[Node] = []
+    for child in children_mnemonics:
+        children_list.append(Node(child))
+    with pytest.raises(AmbiguousPathError):
+        Node(mnemonic, children=children_list)
+    for child_node in children_list:
+        assert child_node.parent is None
+
+
+@pytest.mark.parametrize(
+    ("mnemonic", "children_mnemonics"),
+    [
+        ("CLOCk", ["TIMer", "TIME"]),
+    ],
+    ids=[
+        "different-spellings",
+    ],
+)
+def test_same_level_distinct_spellings_allowed(
+    mnemonic: str, children_mnemonics: list[str]
+) -> None:
+    """Siblings whose spellings all differ coexist (SCPI-99 p. 25, TIME/TIMer)."""
+    children_list: list[Node] = []
+    for child in children_mnemonics:
+        children_list.append(Node(child))
+    node = Node(mnemonic, children=children_list)
+    for child_node in children_list:
+        assert child_node.parent is node
+
+
+def test_collision_through_optional_child() -> None:
+    """A direct child collides with one promoted through an optional sibling.
+
+    Children of a default node count one level up (SCPI-99 p. 26), so LEAF
+    and [TREE]:LEAF are both typeable as LEAF at ORIGin. The failed build
+    leaves both children unadopted.
+    """
+    second_leaf = Node("LEAF")
+    tree = Node("TREE", optional=True, children=[second_leaf])
+    leaf = Node("LEAF")
+    with pytest.raises(AmbiguousPathError):
+        Node("ORIGin", children=[tree, leaf])
+    assert tree.parent is None
+    assert leaf.parent is None
+
+
+def test_two_optional_siblings_with_same_child() -> None:
+    """Two optional siblings that both promote a LEAF collide at their parent."""
+    second_leaf = Node("LEAF")
+    tree = Node("TREE", optional=True, children=[second_leaf])
+    leaf = Node("LEAF")
+    plant = Node("PLANt", optional=True, children=[leaf])
+    with pytest.raises(AmbiguousPathError):
+        Node("ORIGin", children=[tree, plant])
+    assert tree.parent is None
+    assert plant.parent is None
+
+
+def test_promotion_stops_at_required_node() -> None:
+    """Promotion stops at a required node, so a LEAF below it doesn't collide.
+
+    [OUTer]:INNer:LEAF needs INNer typed, so only OUTer and INNer are typeable
+    at ORIGin, next to the direct LEAF.
+    """
+    second_leaf = Node("LEAF")
+    inner = Node("INNer", children=[second_leaf])
+    outer = Node("OUTer", optional=True, children=[inner])
+    leaf = Node("LEAF")
+    Node("ORIGin", children=[leaf, outer])
+    assert second_leaf.parent is inner
+
+
+def test_collision_through_two_optional_children() -> None:
+    """Promotion repeats through nested defaults: [OUTer][INNer]LEAF hits LEAF."""
+    second_leaf = Node("LEAF")
+    inner = Node("INNer", optional=True, children=[second_leaf])
+    outer = Node("OUTer", optional=True, children=[inner])
+    leaf = Node("LEAF")
+    with pytest.raises(AmbiguousPathError):
+        Node("ORIGin", children=[leaf, outer])
+    assert outer.parent is None
+    assert leaf.parent is None
+
+
+def test_jstart_with_optional_node_containing_jstop() -> None:
+    """A short-form collision (JST) is caught through a default node too."""
+    jstop = Node("JSTop")
+    tree = Node("TREE", optional=True, children=[jstop])
+    jstart = Node("JSTart")
+    with pytest.raises(AmbiguousPathError):
+        Node("ORIGin", children=[jstart, tree])
+    assert jstart.parent is None
+    assert tree.parent is None
+
+
+def test_parent_child_same_name() -> None:
+    """A node may have a child with its own name: different levels, no default."""
+    child = Node("VOLTage")
+    parent = Node("VOLTage", children=[child])
+    assert parent is child.parent
+
+
+def test_optional_node_and_child_node_same_mnemonic() -> None:
+    """An optional node and its same-named child collide one level up.
+
+    [TREE]:TREE is valid on its own; at ORIGin both are typeable as TREE. This
+    also pins the order: the optional node is recorded before its children.
+    """
+    child_tree = Node("TREE")
+    tree = Node("TREE", optional=True, children=[child_tree])
+    with pytest.raises(AmbiguousPathError):
+        Node("ORIGin", children=[tree])
+    assert tree.parent is None
+
+
+def test_same_name_different_positions() -> None:
+    """The same mnemonic under two required siblings is fine (AC:RANGe, DC:RANGe)."""
+    range_ac = Node("RANGe")
+    ac = Node("AC", children=[range_ac])
+    range_dc = Node("RANGe")
+    dc = Node("DC", children=[range_dc])
+    origin = Node("ORIGin", children=[ac, dc])
+    assert dc.parent is origin
+    assert ac.parent is origin
+
+
+def test_duplicate_child_error() -> None:
+    """The same node object listed twice is a DuplicateChildError, not ambiguity.
+
+    Checked with identity: two different but equal nodes are an ambiguity.
+    """
+    a = Node("A")
+    with pytest.raises(DuplicateChildError):
+        Node("ORIGin", children=[a, a])
+    assert a.parent is None
