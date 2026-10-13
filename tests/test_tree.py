@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from scpi_sim.tree import (
@@ -298,3 +300,98 @@ def test_duplicate_child_error() -> None:
     with pytest.raises(DuplicateChildError):
         Node("ORIGin", children=[a, a])
     assert a.parent is None
+
+
+@pytest.mark.parametrize(
+    ("chain", "expected"),
+    [
+        ((("ROOT", False), ("VOLTage", False), ("DC", False)), "ROOT:VOLTage:DC"),
+        ((("ROOT", False), ("VOLTage", True), ("DC", False)), "ROOT[:VOLTage]:DC"),
+        ((("ROOT", True), ("VOLTage", True), ("DC", False)), "[ROOT:][VOLTage:]DC"),
+        (
+            (("ROOT", False), ("VOLTage", True), ("DC", False), ("NPLCycles", True)),
+            "ROOT[:VOLTage]:DC[:NPLCycles]",
+        ),
+        ((("ROOT", True), ("VOLTage", False), ("DC", True)), "[ROOT:]VOLTage[:DC]"),
+        (
+            (("ROOT", True), ("VOLTage", False), ("DC", False), ("NPLCycles", True)),
+            "[ROOT:]VOLTage:DC[:NPLCycles]",
+        ),
+        ((("ROOT", False), ("VOLTage", True), ("DC", True)), "ROOT[:VOLTage][:DC]"),
+        (
+            (("ROOT", False), ("VOLTage", True), ("DC", True), ("NPLCycles", False)),
+            "ROOT[:VOLTage][:DC]:NPLCycles",
+        ),
+        ((("VOLTage", False),), "VOLTage"),
+        ((("VOLTage", True),), "[VOLTage]"),
+    ],
+    ids=[
+        "all-required",
+        "optional-between-two-required",
+        "two-optional-parents",
+        "required-optional-required-optional",
+        "required-between-two-optionals",
+        "optional-last",
+        "two-optional-children",
+        "two-optionals-in-the-middle",
+        "single-required",
+        "single-optional",
+    ],
+)
+def test_path(chain: tuple[tuple[str, bool], ...], expected: str) -> None:
+    """path() writes SCPI notation for every position of an optional node.
+
+    Each row is a straight chain, top-down, as (mnemonic, optional) pairs; the
+    test builds it bottom-up and checks the bottom node's path. Before the first
+    required node an optional one takes the colon after it, afterwards the one
+    before it; a lone optional node has no colon at all.
+    """
+    bottom_up = chain[::-1]
+    list_nodes: list[Node] = []
+    (child_mnemonic, child_is_optional) = bottom_up[0]
+    child_node = Node(child_mnemonic, optional=child_is_optional)
+    list_nodes.append(child_node)
+    for pair in bottom_up[1:]:
+        (mnemonic, is_optional) = pair
+        last_node = list_nodes[-1]
+        node = Node(mnemonic, optional=is_optional, children=[last_node])
+        list_nodes.append(node)
+    assert child_node.path() == expected
+
+
+def test_equal_nodes_different_paths() -> None:
+    """Two equal RANGe nodes get different paths: what == can't tell apart, path can."""
+    range_ac = Node("RANGe")
+    ac = Node("AC", children=[range_ac])
+    range_dc = Node("RANGe")
+    dc = Node("DC", children=[range_dc])
+    Node("ORIGin", children=[ac, dc])
+    assert range_ac.path() == "ORIGin:AC:RANGe"
+    assert range_dc.path() == "ORIGin:DC:RANGe"
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        ("leaf", "outer"),
+        ("outer", "leaf"),
+    ],
+    ids=["leaf-first", "outer-first"],
+)
+def test_reversed_child_order_path(first: str, second: str) -> None:
+    """The ambiguity message names the promoted path whichever child comes first.
+
+    Order decides which node is the first claimant and which the second, so
+    both must be printed with path(). Rows name the order; nodes are built here.
+    """
+    second_leaf = Node("LEAF")
+    inner = Node("INNer", optional=True, children=[second_leaf])
+    outer = Node("OUTer", optional=True, children=[inner])
+    leaf = Node("LEAF")
+    children_list = [leaf, outer]
+    if first == "outer":
+        children_list = children_list[::-1]
+    with pytest.raises(AmbiguousPathError, match=re.escape("[OUTer:][INNer:]LEAF")):
+        Node("ORIGin", children=children_list)
+    assert outer.parent is None
+    assert leaf.parent is None

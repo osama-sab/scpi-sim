@@ -10,21 +10,23 @@ are not going well.
 
 **Phase:** 1 - SCPI parser and simulated instrument
 **Started:**  2026-09-03
-**Last session:** 2026-10-10
-**Hours invested so far:** 37
+**Last session:** 2026-10-13
+**Hours invested so far:** 44
 
 **Next concrete task:**
-> Make `AmbiguousPathError` name both competing *paths*, not just mnemonics:
-> scenario 5 currently says `'LEAF' under ORIGin would match both LEAF and
-> LEAF`; it should show `LEAF` and `OUTer:INNer:LEAF`. A promoted node already
-> knows its `parent`, so walk up from it to the direct child. Test it with
-> `pytest.raises(AmbiguousPathError, match=...)`.
+> Common commands (`*IDN?`, `*RST`, `*CLS`, ...) leave the current path
+> untouched: in `MEAS:VOLT:AC:RANG 10;*CLS;NPLC 5`, `NPLC` must still resolve
+> under `AC`. Start with my own short test plan — which messages, and what
+> each one catches — before any code. Look up how IEEE 488.2 / SCPI-99 §6.2.4
+> describe common commands inside a compound message first.
 
 ---
 
 ## Phase checklist
 
-Full detail in `docs/BUILD_PLAN.md`. Tick only when committed and pushed.
+Full detail in `docs/BUILD_PLAN.md`. Tick an item in the same commit that
+finishes it, so the tick and the code reach GitHub together — never for
+uncommitted work.
 
 ### Phase 0 — Foundations (3–4 h)
 - [x] `git init`, GitHub repo, `.gitignore`
@@ -50,9 +52,9 @@ honest record of what I learned.
       prefix, remainder lowercase, ≤ 12 chars)
 - [x] Optional bracketed keywords resolve
 - [x] ⁺ Nested optional keywords resolve
-- [ ] ⁺ Ambiguity detected at tree-build time (same level, and through
+- [x] ⁺ Ambiguity detected at tree-build time (same level, and through
       default nodes at any depth — SCPI-99 p. 25)
-- [ ] ⁺ Ambiguity error names both competing paths
+- [x] ⁺ Ambiguity error names both competing paths
 - [x] Leading colon, semicolon chaining
 - [x] ⁺ Current path carried across chained units, reset at the terminator
 - [ ] ⁺ Current path is per-connection state, not module-level
@@ -494,6 +496,40 @@ values, separate functions when they differ in shape; rows hold plain
 values. Every same-level collision is a short-form collision, so checking
 `short()` against a lookup of both spellings is complete.
 Next: name both competing paths in the error message.
+
+### 2026-10-13 — 7 h (across 12 and 13 October)
+Did: `Node.path()` — the header path to a node in SCPI notation, walking up
+the parent chain: optional nodes bracketed with their colon inside, so
+dropping the brackets still leaves a valid header (`[SENSe:]VOLTage`,
+`VOLTage[:DC]:NPLCycles`). `AmbiguousPathError` now prints both claimants
+with it: `'LEAF' under ORIGin would match both LEAF and
+[OUTer:][INNer:]LEAF`. Chose SCPI's own notation over plain `[X]` brackets,
+because every instrument manual uses it. Tests: a `parametrize` table of
+straight chains (rows are `(mnemonic, optional)` pairs, built bottom-up in
+the test) covering every position of an optional node and both single-node
+paths; two equal `RANGe` nodes getting different paths; and the message
+checked with `pytest.raises(match=re.escape(...))` in both children orders.
+Ran a mutation check myself: breaking the "lone optional node" branch turns
+exactly `single-optional` red.
+Stuck on: the first `path()` looped over the *letters* of the mnemonic, with
+`if self.matches(...)` always true (a non-empty list is truthy). Then a
+trailing colon, and mypy inferring `current = self` as `Node`, so
+`current.parent` didn't fit and `return` became "unreachable". Only one side
+of the message used `path()`, so reversing the children printed `LEAF and
+LEAF`. The SCPI notation took several attempts: reversing the list but still
+prepending, overwriting the path on the last node, `while` where `if` was
+meant (an endless loop), reading past the end of the list, and deciding each
+piece from its neighbours — until it became a four-row table driven by one
+flag, "has a required node appeared yet?". In the tests: a one-element
+tuple written without its comma, and module-level nodes shared by
+`parametrize` rows again.
+Learned: when nested `if`s start contradicting each other, the decision is
+being made from the wrong facts — write it as a table. mypy types a variable
+from its first assignment; annotate it wider up front. `(x)` is not a tuple,
+`(x,)` is. `match=` reads a regular expression, so `re.escape` the expected
+text. A mutation check — break one line on purpose, see which test notices —
+is how to know a row actually guards something.
+Next: common commands leave the current path untouched.
 
 <!--
 ### YYYY-MM-DD — 2.5 h

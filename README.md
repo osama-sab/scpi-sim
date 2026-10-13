@@ -18,16 +18,24 @@ responsibilities.
 
 Claude does:
 
-- Final checks and sanity checks before each commit
-- Docstrings
+- Code review of what I write, and final checks before each commit
+- Docstrings and commit messages
 - Planning and maintaining `PROGRESS.md`
 - `pyproject.toml` and other configuration files
 
 Claude does not:
 
 - Write the SCPI code (parser, error queue, status registers, driver logic)
-- Give direct solutions, even when asked
+- Design my tests; I decide what to test, Claude reviews the plan
 - Make design decisions; those choices are mine
+
+When I'm stuck, help comes in steps. First a question that narrows the
+search, then the concept and the shape of a solution (a function signature,
+the cases to handle, a pointer to the standard), then one hint at a time.
+If I've made several real attempts on the same problem over a couple of
+hours, Claude gives one bigger hint: a skeleton of the structure or a
+decision table, with the individual steps still left for me to fill in. It
+never hands over the finished code.
 
 ## Quickstart
 

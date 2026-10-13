@@ -87,7 +87,7 @@ class Node:
                 if claimed_by is not None:
                     raise AmbiguousPathError(
                         f"{candidate.short()!r} under {self.mnemonic} would match "
-                        f"both {claimed_by.mnemonic} and {candidate.mnemonic}"
+                        f"both {claimed_by.path()} and {candidate.path()}"
                     )
 
                 seen.update(
@@ -120,6 +120,43 @@ class Node:
             for child in self.children:
                 list_nodes.extend(child.typeable_from_parent())
         return list_nodes
+
+    def path(self) -> str:
+        """Return the header path to this node in SCPI notation.
+
+        Optional nodes are bracketed with their colon inside, so dropping the
+        brackets still leaves a valid header: before the first required node
+        an optional one takes the colon after it (``[SENSe:]VOLTage``), after
+        it the colon before it (``VOLTage[:DC]:NPLCycles``). The path starts at
+        the highest node adopted so far, so while a parent is still being built
+        it is relative to that parent; in a finished tree it starts with the
+        root's own mnemonic, which is not part of a real SCPI header.
+        """
+        current: Node | None = self
+        parents_list: list[Node] = []
+        pieces: list[str] = []
+        passed_required = False
+        while current is not None:
+            parents_list.append(current)
+            current = current.parent
+        top_down = parents_list[::-1]
+        for position, node in enumerate(top_down):
+            is_last = position == len(top_down) - 1
+            if not passed_required:
+                if node.optional:
+                    if is_last:
+                        pieces.append("[" + node.mnemonic + "]")
+                    else:
+                        pieces.append("[" + node.mnemonic + ":]")
+                else:
+                    pieces.append(node.mnemonic)
+                    passed_required = True
+            else:
+                if node.optional:
+                    pieces.append("[:" + node.mnemonic + "]")
+                else:
+                    pieces.append(":" + node.mnemonic)
+        return "".join(pieces)
 
     def short(self) -> str:
         """Return the standard SCPI short form of the mnemonic."""
