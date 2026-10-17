@@ -209,7 +209,7 @@ def test_walk_message(message: str, expected: list[ParsedUnit | None]) -> None:
 
     A failed unit appears as None and ends the list; lengths must match exactly.
     """
-    test_result = walk_message(root, message)
+    test_result = walk_message(root, message, {})
     for x, y in zip(test_result, expected, strict=True):
         if y is None:
             assert x is None
@@ -373,3 +373,16 @@ def test_nested_optional_negative(
     origin = Node("ORIGin", children=[outer])
     outcome = walk(origin, origin, header)
     assert outcome is None
+
+
+def test_common_commands() -> None:
+    cls = Node("CLS")
+    dc_voltage = Node("DC")
+    ac_voltage = Node("AC")
+    voltage = Node("VOLTage", children=[ac_voltage, dc_voltage])
+    tree = Node("TREE", children=[voltage])
+    assert walk_message(tree, "VOLT:DC 10;*CLS;AC", {"*CLS": cls}) == [
+        ParsedUnit(dc_voltage, False, "10"),
+        ParsedUnit(cls, False, ""),
+        ParsedUnit(ac_voltage, False, ""),
+    ]

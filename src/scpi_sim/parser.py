@@ -112,7 +112,9 @@ class ParsedUnit:
     parameters: str
 
 
-def walk_message(root: Node, message: str) -> list[ParsedUnit | None]:
+def walk_message(
+    root: Node, message: str, common_commands: dict[str, Node]
+) -> list[ParsedUnit | None]:
     """Parse every ``;``-separated unit of `message`, one `ParsedUnit` per unit.
 
     Each unit is split by `split_unit` into header, query flag and parameter
@@ -121,11 +123,19 @@ def walk_message(root: Node, message: str) -> list[ParsedUnit | None]:
     before its last keyword (see `walk`). Whitespace around each unit is
     ignored; whitespace inside a header is not, so ``"MEAS: VOLT"`` fails.
 
+    A header starting with ``*`` is an IEEE 488.2 common command. Common
+    commands are not part of the command tree: the header is looked up in
+    `common_commands` instead of being walked, and the current path is left
+    exactly as it was. In ``"MEAS:VOLT:AC:RANG 10;*CLS;NPLC 5"``, ``NPLC``
+    still resolves under ``AC``. The query or command form is then checked
+    against the found node's flags, as for any other unit.
+
     Provisional, pending IEEE 488.2:
 
-    - A unit that can't be split, doesn't resolve, or uses a form its node
-      doesn't allow (see `helper_parser`) adds ``None`` and ends the message;
-      later units are not parsed, so the list stops at the failure.
+    - A unit that can't be split, doesn't resolve (in the tree, or in
+      `common_commands`), or uses a form its node doesn't allow (see
+      `helper_parser`) adds ``None`` and ends the message; later units are
+      not parsed, so the list stops at the failure.
     - An empty unit counts as a failure: a trailing ``;``, or ``;;``.
 
     Known limitation: the message is split on every ``;``, including one
@@ -139,6 +149,13 @@ def walk_message(root: Node, message: str) -> list[ParsedUnit | None]:
     message
         One program message: units separated by ``;``, each a header with an
         optional trailing ``?`` and optional parameter text.
+    common_commands
+        The common commands this instrument accepts, keyed by header. Keys
+        must be upper-case and include the ``*`` (``"*CLS"``, not ``"*cls"``
+        or ``"CLS"``): the incoming header is upper-cased before the lookup,
+        but the keys are used as given, so a key in any other form never
+        matches. Only the key is compared; the node's own mnemonic is not.
+        ``{}`` accepts no common commands.
     """
     result = message.split(";")
     current_path = root
@@ -149,11 +166,18 @@ def walk_message(root: Node, message: str) -> list[ParsedUnit | None]:
             result_list.append(None)
             return result_list
         header, query, parameter = value
-        outcome = walk(root, current_path, header)
-        if outcome is None:
-            result_list.append(None)
-            return result_list
-        landed, current_path = outcome
+        if header.startswith("*"):
+            header = header.upper()
+            landed = common_commands.get(header)
+            if landed is None:
+                result_list.append(None)
+                return result_list
+        else:
+            outcome = walk(root, current_path, header)
+            if outcome is None:
+                result_list.append(None)
+                return result_list
+            landed, current_path = outcome
         if helper_parser(landed, query):
             result_unit = ParsedUnit(node=landed, is_query=query, parameters=parameter)
             result_list.append(result_unit)

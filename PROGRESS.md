@@ -10,15 +10,14 @@ are not going well.
 
 **Phase:** 1 - SCPI parser and simulated instrument
 **Started:**  2026-09-03
-**Last session:** 2026-10-13
-**Hours invested so far:** 44
+**Last session:** 2026-10-17
+**Hours invested so far:** 47
 
 **Next concrete task:**
-> Common commands (`*IDN?`, `*RST`, `*CLS`, ...) leave the current path
-> untouched: in `MEAS:VOLT:AC:RANG 10;*CLS;NPLC 5`, `NPLC` must still resolve
-> under `AC`. Start with my own short test plan — which messages, and what
-> each one catches — before any code. Look up how IEEE 488.2 / SCPI-99 §6.2.4
-> describe common commands inside a compound message first.
+> Rows for the two untested parts of the common-command branch in
+> `walk_message`: the upper-casing of the header and the miss path. Write the
+> plan first (rows, and what each one catches), then mutation-check each row
+> by deleting the line it guards.
 
 ---
 
@@ -58,7 +57,7 @@ honest record of what I learned.
 - [x] Leading colon, semicolon chaining
 - [x] ⁺ Current path carried across chained units, reset at the terminator
 - [ ] ⁺ Current path is per-connection state, not module-level
-- [ ] ⁺ Common commands (`*XYZ`) leave the current path untouched
+- [x] ⁺ Common commands (`*XYZ`) leave the current path untouched
 - [x] Query vs command distinction
 - [x] ⁺ Settable and queryable are independent flags — bare `SENS` is an error
 
@@ -531,6 +530,46 @@ text. A mutation check — break one line on purpose, see which test notices —
 is how to know a row actually guards something.
 Next: common commands leave the current path untouched.
 
+### 2026-10-17 — 3 h
+Did: Common commands leave the current path untouched. `walk_message` takes a
+third parameter, `common_commands: dict[str, Node]`. A header starting with
+`*` is upper-cased and looked up there instead of walked through the tree,
+and `current_path` isn't touched; a miss adds `None` and ends the message
+like every other failure. `test_walk_message` passes `{}`. New
+`test_common_commands`: in `VOLT:DC 10;*CLS;AC`, `AC` must still land under
+`VOLTage`. Docstring (written by Claude) documents the key rule.
+Decided: common commands live outside the tree — IEEE 488.2 defines them as a
+flat set, separate from the SCPI hierarchy. Rejected a container `Node`,
+because it would give them a parent. The dict is passed in next to `root`,
+not kept as a module-level registry in `tree.py`: a global would leak
+between tests and couldn't hold two instrument models with different
+optional commands (`*TRG`, `*SAV`) — the same reason the current path must
+be per-connection. No default: only one existing call needed updating, and
+a default `{}` is created once and shared by every call (ruff B006). Keys
+are upper-case and include the `*`; documented, not enforced.
+Stuck on: the first version stripped the `*` and walked the rest through the
+instrument tree — that was option B, not the A I had chosen — so
+`*MEAS:VOLT:AC:RANG` and `*CLE` (through optional `SENSe`) were accepted and
+the real `*CLS` wasn't. `header[0]` crashed on the empty header `split_unit`
+returns for a lone `?`. An `elif` with no `else` left `landed` stale from
+the previous unit (`NPLC*` accepted as `AC:RANG`) or unbound — the 16
+September bug again. A `None` from `.get()` went straight into
+`helper_parser` (mypy caught it). `rstrip("*")` strips the wrong end. The
+key form changed between versions (`*cls`, `CLS`, `*CLS`) and the test fell
+out of step each time, because the rule wasn't written anywhere. Deleting
+the `upper()` left every test green.
+Learned: a row only proves something if a wrong implementation fails it.
+With `*CLS` first in the message the path is the root before it, so "left
+alone" and "reset to root" give the same answer and the row can't tell them
+apart. Mid-message, after `VOLT:DC`, the path is `VOLTage`; a reset sends
+`AC` to the root, where it doesn't exist. Found by putting
+`current_path = root` into the branch on purpose: the start-of-message row
+stayed green, the mid-message row returned `None`. Also: a parameter is the
+name in the `def` line, an argument is the value passed; a default is
+evaluated once, when the `def` runs; `rstrip`/`lstrip` remove every matching
+character at that end; `.upper()` leaves `*` alone.
+Next: rows for the upper-casing and the miss path.
+
 <!--
 ### YYYY-MM-DD — 2.5 h
 Did:
@@ -586,3 +625,10 @@ Things I do not understand yet and should ask about or look up.
 - Which error code fires for a form the node doesn't allow (`CLE?`,
   `MEAS:VOLT:DC 10`)? Look it up in SCPI-99 §21.8.9 (PDF pp. 519–521) and the
   Keysight error list (p. 461) before the error queue replaces the `None`.
+- Which clause of SCPI-99 or IEEE 488.2 states that common commands leave the
+  header path untouched? Not cited in `walk_message`'s docstring yet; add it
+  once found.
+- Common-command keys must be upper-case, include the `*`, and match their
+  node — documented in `walk_message`, enforced nowhere (`{"*IDN": cls_node}`
+  is accepted). Decide whether the key should be derived from the node when
+  the real instrument definition is built.
