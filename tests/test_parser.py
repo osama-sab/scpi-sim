@@ -375,14 +375,59 @@ def test_nested_optional_negative(
     assert outcome is None
 
 
-def test_common_commands() -> None:
-    cls = Node("CLS")
-    dc_voltage = Node("DC")
-    ac_voltage = Node("AC")
-    voltage = Node("VOLTage", children=[ac_voltage, dc_voltage])
-    tree = Node("TREE", children=[voltage])
-    assert walk_message(tree, "VOLT:DC 10;*CLS;AC", {"*CLS": cls}) == [
-        ParsedUnit(dc_voltage, False, "10"),
-        ParsedUnit(cls, False, ""),
-        ParsedUnit(ac_voltage, False, ""),
-    ]
+cls = Node("CLS", queryable=False)
+opc = Node("OPC", queryable=True)
+ese = Node("ESE", settable=True)
+dc_curr = Node("DC")
+ac_curr = Node("AC")
+current_src = Node("CURRent", children=[dc_curr, ac_curr])
+source = Node("SOURce", children=[current_src])
+
+
+@pytest.mark.parametrize(
+    ("message", "result"),
+    [
+        (
+            "CURR:DC 10;*CLS;AC",
+            [
+                ParsedUnit(dc_curr, False, "10"),
+                ParsedUnit(cls, False, ""),
+                ParsedUnit(ac_curr, False, ""),
+            ],
+        ),
+        (
+            "*CLS",
+            [ParsedUnit(cls, False, "")],
+        ),
+        (
+            "*OPC?",
+            [ParsedUnit(opc, True, "")],
+        ),
+        (
+            "*ESE 10",
+            [ParsedUnit(ese, False, "10")],
+        ),
+        ("*CLS?", [None]),
+        (
+            "CURR:DC;*RST;AC",
+            [ParsedUnit(dc_curr, False, ""), None],
+        ),
+        (
+            "*cls",
+            [ParsedUnit(cls, False, "")],
+        ),
+    ],
+    ids=[
+        "common-command-between-paths",
+        "common-command-only",
+        "common-command-query",
+        "common-command-parameter",
+        "non-queryable-query-common-command",
+        "non-existing-command",
+        "lower-case-common-command",
+    ],
+)
+def test_common_commands(message: str, result: list[ParsedUnit]) -> None:
+    assert (
+        walk_message(source, message, {"*OPC": opc, "*CLS": cls, "*ESE": ese}) == result
+    )

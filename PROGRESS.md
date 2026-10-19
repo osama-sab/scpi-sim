@@ -10,14 +10,15 @@ are not going well.
 
 **Phase:** 1 - SCPI parser and simulated instrument
 **Started:**  2026-09-03
-**Last session:** 2026-10-17
-**Hours invested so far:** 47
+**Last session:** 2026-10-19
+**Hours invested so far:** 49
 
 **Next concrete task:**
-> Rows for the two untested parts of the common-command branch in
-> `walk_message`: the upper-casing of the header and the miss path. Write the
-> plan first (rows, and what each one catches), then mutation-check each row
-> by deleting the line it guards.
+> First unticked item in 1.1: "Current path is per-connection state, not
+> module-level". `current_path` is already a local variable in
+> `walk_message`, reset for every message, so decide whether the item is
+> already met. If it is, prove it with a test (two consecutive messages must
+> not share a path) and tick it; if not, write down what is missing.
 
 ---
 
@@ -570,6 +571,46 @@ evaluated once, when the `def` runs; `rstrip`/`lstrip` remove every matching
 character at that end; `.upper()` leaves `*` alone.
 Next: rows for the upper-casing and the miss path.
 
+### 2026-10-19 — 2 h (across 18 and 19 October)
+Did: Tests for the rest of the common-command branch. Wrote a test plan,
+then cut it from 21 rows to 7. `test_common_commands` is now a `parametrize`
+table on its own small `SOURce:CURRent:DC|AC` tree, with real common
+commands and their real flags (`*CLS` has no query form): a common command
+between two paths (the committed row), alone, as a query, with a parameter,
+a query on `*CLS`, an unknown `*RST` mid-message, and lowercase `*cls`.
+Mutation check, one break per line of the `*` branch: deleting the
+`upper()` turns only `lower-case-common-command` red; removing the miss
+path's `return` only `non-existing-command`; letting `*` units skip the
+form check (`header.startswith("*") or helper_parser(...)`) only
+`non-queryable-query-common-command`. Every line in the branch now has a
+row that fails without it.
+Decided: a row earns its place only if some break in the code turns it red
+and no other row does. Parked the rows that would lock in the unchecked key
+rule (lowercase key, key without `*`, a tree node in the dict, a common node
+with a parent) — they belong to that open question.
+Stuck on: the first plan crossed every position with every query/parameter
+combination — 21 rows, most re-testing `split_unit` and `helper_parser`,
+which have their own tables. One "negative" was a positive: a query only
+needs `queryable`, so `settable=False` doesn't matter (the 3 October mix-up
+again). `SENS:*CLS:VOLT` can't fail: it misses in `walk` whatever the `*`
+branch does. To check the rows were sensitive I set `*CLS` to neither
+settable nor queryable — every positive row went red at once, which shows
+they can fail but not which are redundant, because it changed the test's
+input, not the code. The first L181 break deleted L181–183, which also
+removed the append every unit goes through: 20 failures instead of one.
+Three `assert`s in one function: the first failure hid the rest. Worried
+that rows naming module-level nodes was the 10/13 October problem again —
+it isn't: that was rows building their own trees; nodes that
+`walk_message` only reads are safe at module level.
+Learned: the mutation table — rows down the side, one-line breaks across
+the top, mark what goes red. A row whose reds are all covered by other rows
+adds nothing. A break has to hit only the behaviour under test; breaking a
+line every unit shares breaks everything and proves nothing. `or` stops at
+the first `True`, so `x or check()` switches a check off for one case. A
+column that never changes isn't a parameter. In this codebase a header is
+the part before the parameters; a message is the whole line.
+Next: decide whether "current path is per-connection state" is already met.
+
 <!--
 ### YYYY-MM-DD — 2.5 h
 Did:
@@ -631,4 +672,6 @@ Things I do not understand yet and should ask about or look up.
 - Common-command keys must be upper-case, include the `*`, and match their
   node — documented in `walk_message`, enforced nowhere (`{"*IDN": cls_node}`
   is accepted). Decide whether the key should be derived from the node when
-  the real instrument definition is built.
+  the real instrument definition is built. Parked test rows for it (19 Oct):
+  lowercase key, key without `*`, a tree node in the dict, a common node
+  that has a parent.
