@@ -11,14 +11,14 @@ are not going well.
 **Phase:** 1 - SCPI parser and simulated instrument
 **Started:**  2026-09-03
 **Last session:** 2026-10-19
-**Hours invested so far:** 49
+**Hours invested so far:** 50
 
 **Next concrete task:**
-> First unticked item in 1.1: "Current path is per-connection state, not
-> module-level". `current_path` is already a local variable in
-> `walk_message`, reset for every message, so decide whether the item is
-> already met. If it is, prove it with a test (two consecutive messages must
-> not share a path) and tick it; if not, write down what is missing.
+> 1.1b: commas between parameters — split a unit's parameter text into
+> separate parameters (the whitespace half of that item is already done by
+> `split_unit`). Read how SCPI-99 and IEEE 488.2 define the separator between
+> program data first, then write the test plan (rows, and what each one
+> catches) before any code.
 
 ---
 
@@ -57,7 +57,7 @@ honest record of what I learned.
 - [x] ⁺ Ambiguity error names both competing paths
 - [x] Leading colon, semicolon chaining
 - [x] ⁺ Current path carried across chained units, reset at the terminator
-- [ ] ⁺ Current path is per-connection state, not module-level
+- [x] ⁺ Current path is per-connection state, not module-level
 - [x] ⁺ Common commands (`*XYZ`) leave the current path untouched
 - [x] Query vs command distinction
 - [x] ⁺ Settable and queryable are independent flags — bare `SENS` is an error
@@ -610,6 +610,39 @@ the first `True`, so `x or check()` switches a check off for one case. A
 column that never changes isn't a parameter. In this codebase a header is
 the part before the parameters; a message is the whole line.
 Next: decide whether "current path is per-connection state" is already met.
+
+### 2026-10-19 — 1 h (second session)
+Did: "Current path is per-connection state, not module-level" — the last
+open item in 1.1, so the command-tree section is complete. `current_path` is
+a local variable in `walk_message`, created at the start of every message,
+so no two messages or connections can share it. New
+`test_path_per_connection_state`: `MEAS:VOLT:AC:NPLC`, then `RANGe` in a
+second call must give `[None]`. Mutation check: made `current_path` a
+module-level variable with `global`, reset to `root` only while it is still
+`None` — the test went red, and 15 other tests with it. Also widened
+`test_common_commands`' annotation to `list[ParsedUnit | None]`.
+Decided: a local variable is the best answer, not a stopgap — give state the
+smallest scope that works. Per-connection state becomes a real decision with
+the error queue, which has to survive between messages.
+Stuck on: first wrote the two messages as two `parametrize` rows — two
+separate tests, so `message-two` only follows message one if pytest happens
+to run them in order (`-k message-two` runs it alone). The first message,
+`MEAS:VOLT:AC`, was rejected by the form check (`AC` isn't settable), not by
+the walk as I first guessed; calling `walk` on its own showed it succeeded.
+Thought two nodes named `DC` would raise — they don't: ambiguity is only
+between nodes typeable from the same parent, and client input never raises.
+`DC` couldn't detect a leak anyway, because the leaked `DC` isn't settable
+either; `RANGe` under `AC` is, so a leak shows. The break took three tries:
+`global root` (a parameter — `SyntaxError`, the file wouldn't load) with a
+check on `root is None` (never true); then the reset to `root` was still
+unconditional, so the test stayed green.
+Learned: to find which stage of a pipeline produced a `None`, call each stage
+on its own, in order. A test must never depend on another test having run
+first; steps that must happen in sequence go in one test. `global name`
+makes assignments inside a function write the module-level variable, and a
+parameter can't be global. Module-level state leaks between tests: one
+leaking variable turned 16 tests red.
+Next: commas between parameters.
 
 <!--
 ### YYYY-MM-DD — 2.5 h

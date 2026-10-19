@@ -427,7 +427,14 @@ source = Node("SOURce", children=[current_src])
         "lower-case-common-command",
     ],
 )
-def test_common_commands(message: str, result: list[ParsedUnit]) -> None:
+def test_common_commands(message: str, result: list[ParsedUnit | None]) -> None:
     assert (
         walk_message(source, message, {"*OPC": opc, "*CLS": cls, "*ESE": ese}) == result
     )
+
+
+def test_path_per_connection_state() -> None:
+    message_one = walk_message(root, "MEAS:VOLT:AC:NPLC", {})
+    message_two = walk_message(root, "RANGe", {})
+    assert message_one == [ParsedUnit(nplc_ac, False, "")]
+    assert message_two == [None]
